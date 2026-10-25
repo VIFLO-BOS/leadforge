@@ -1,0 +1,81 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@leadforge/ui/styles.css";
+
+/* The UI package is consumed from source through a workspace symlink, which Tailwind's
+   automatic detection skips. Register it explicitly. */
+@source "../../../packages/ui/src";
+
+@layer base {
+  html,
+  body {
+    /* Safety net only. Layouts must not rely on this; CI asserts no overflow. */
+    overflow-x: clip;
+    min-width: 240px;
+  }
+
+  body {
+    min-height: 100dvh;
+  }
+
+  main {
+    min-width: 0;
+  }
+}
+
+@utility container-marketing {
+  width: 100%;
+  max-width: var(--container-marketing);
+  margin-inline: auto;
+  padding-inline: var(--page-pad);
+}
+
+@utility container-prose {
+  width: 100%;
+  max-width: var(--container-prose);
+  margin-inline: auto;
+  padding-inline: var(--page-pad);
+}
+
+@utility bg-grid {
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+@utility bg-glow {
+  background-image: radial-gradient(60% 50% at 50% 0%, var(--glow), transparent 70%);
+}
+
+.prose-legal h2 {
+  margin-top: 2rem;
+  margin-bottom: 0.5rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+.prose-legal h3 {
+  margin-top: 1.25rem;
+  margin-bottom: 0.25rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.prose-legal p,
+.prose-legal li {
+  color: var(--muted-foreground);
+  line-height: 1.7;
+  font-size: 0.9375rem;
+}
+.prose-legal p {
+  margin-bottom: 0.75rem;
+}
+.prose-legal ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+.prose-legal a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

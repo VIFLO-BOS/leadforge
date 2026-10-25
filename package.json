@@ -1,0 +1,40 @@
+{
+  "name": "leadforge",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:infra": "docker compose -f infra/docker-compose.yml up -d",
+    "dev:infra:down": "docker compose -f infra/docker-compose.yml down",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "clean": "turbo run clean",
+    "gen:keys": "node scripts/gen-keys.mjs",
+    "db:migrate": "pnpm --filter @leadforge/db-postgres db:migrate",
+    "db:migrate:deploy": "pnpm --filter @leadforge/db-postgres exec prisma generate && pnpm --filter @leadforge/db-postgres db:migrate:deploy",
+    "db:mongo:sync": "pnpm --filter @leadforge/db-mongo build && node -r dotenv/config packages/db-mongo/dist/scripts/sync.js",
+    "db:seed": "pnpm --filter @leadforge/api build && node -r dotenv/config apps/api/dist/scripts/seed.js",
+    "prepare": "husky || true"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.0",
+    "husky": "^9.1.0",
+    "lint-staged": "^16.0.0",
+    "prettier": "^3.4.0",
+    "prettier-plugin-tailwindcss": "^0.6.0",
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,mjs,json,md,css}": "prettier --write"
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "name": "@leadforge/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@leadforge/contracts": "workspace:*",
+    "@leadforge/db-mongo": "workspace:*",
+    "@leadforge/db-postgres": "workspace:*",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/swagger": "^11.0.0",
+    "@nestjs/throttler": "^6.4.0",
+    "argon2": "^0.44.0",
+    "bullmq": "^5.50.0",
+    "ioredis": "^5.6.0",
+    "jose": "^6.0.0",
+    "nestjs-pino": "^4.4.0",
+    "nodemailer": "^7.0.0",
+    "pino": "^9.7.0",
+    "pino-http": "^10.4.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@leadforge/config": "workspace:*",
+    "@types/express": "^5.0.0",
+    "@types/node": "^24.0.0",
+    "@types/nodemailer": "^6.4.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0",
+    "eslint": "^9.0.0"
+  }
+}

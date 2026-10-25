@@ -1,0 +1,261 @@
+/*
+ * LeadForge design tokens. Source of truth: docs/DESIGN_SYSTEM.md.
+ * Light values live on :root. Dark values are applied by system preference unless the
+ * page opts out with data-theme="light", and always when data-theme="dark" is set.
+ */
+
+:root {
+  --background: #fafafa;
+  --foreground: #111113;
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
+  --primary: #1f8a5b;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f1f3;
+  --secondary-foreground: #111113;
+  --muted: #f4f4f6;
+  --muted-foreground: #6b6b74;
+  --border: #e4e4e8;
+  --input: #e4e4e8;
+  --ring: #1f8a5b;
+
+  --success: #1f8a5b;
+  --success-foreground: #ffffff;
+  --warning: #b7791f;
+  --warning-foreground: #ffffff;
+  --destructive: #c53030;
+  --destructive-foreground: #ffffff;
+  --info: #2b6cb0;
+  --info-foreground: #ffffff;
+
+  --success-subtle: color-mix(in srgb, var(--success) 12%, transparent);
+  --warning-subtle: color-mix(in srgb, var(--warning) 14%, transparent);
+  --destructive-subtle: color-mix(in srgb, var(--destructive) 12%, transparent);
+  --info-subtle: color-mix(in srgb, var(--info) 12%, transparent);
+  --primary-subtle: color-mix(in srgb, var(--primary) 12%, transparent);
+
+  --shadow-sm: 0 1px 2px 0 rgb(17 17 19 / 0.06);
+  --shadow-md: 0 4px 12px -2px rgb(17 17 19 / 0.1);
+  --glow: color-mix(in srgb, var(--primary) 16%, transparent);
+  --grid-line: color-mix(in srgb, var(--foreground) 4%, transparent);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  --control-h-sm: 32px;
+  --control-h: 40px;
+  --control-h-lg: 44px;
+
+  --sidebar-w: 248px;
+  --sidebar-w-compact: 68px;
+  --topbar-h: 52px;
+
+  /* 240px baseline: 12px gutters give a 216px content box. */
+  --page-pad: 12px;
+  --container-marketing: 1200px;
+  --container-prose: 720px;
+
+  color-scheme: light;
+}
+
+@media (min-width: 360px) {
+  :root {
+    --page-pad: 16px;
+  }
+}
+@media (min-width: 768px) {
+  :root {
+    --page-pad: 24px;
+  }
+}
+@media (min-width: 1280px) {
+  :root {
+    --page-pad: 32px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --background: #0f0f10;
+    --foreground: #ededef;
+    --surface: #161618;
+    --surface-elevated: #1c1c1f;
+    --primary: #3ecf8e;
+    --primary-foreground: #06281a;
+    --secondary: #232326;
+    --secondary-foreground: #ededef;
+    --muted: #1c1c1f;
+    --muted-foreground: #9a9aa3;
+    --border: #2a2a2e;
+    --input: #2f2f34;
+    --ring: #3ecf8e;
+    --success: #3ecf8e;
+    --success-foreground: #06281a;
+    --warning: #f5b544;
+    --warning-foreground: #2b1d02;
+    --destructive: #f56565;
+    --destructive-foreground: #2b0606;
+    --info: #63b3ed;
+    --info-foreground: #06203a;
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+    --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.5);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --background: #0f0f10;
+  --foreground: #ededef;
+  --surface: #161618;
+  --surface-elevated: #1c1c1f;
+  --primary: #3ecf8e;
+  --primary-foreground: #06281a;
+  --secondary: #232326;
+  --secondary-foreground: #ededef;
+  --muted: #1c1c1f;
+  --muted-foreground: #9a9aa3;
+  --border: #2a2a2e;
+  --input: #2f2f34;
+  --ring: #3ecf8e;
+  --success: #3ecf8e;
+  --success-foreground: #06281a;
+  --warning: #f5b544;
+  --warning-foreground: #2b1d02;
+  --destructive: #f56565;
+  --destructive-foreground: #2b0606;
+  --info: #63b3ed;
+  --info-foreground: #06203a;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.5);
+  color-scheme: dark;
+}
+
+/* Tailwind v4 theme mapping. Utilities reference the semantic tokens above. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-subtle: var(--primary-subtle);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-subtle: var(--destructive-subtle);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-subtle: var(--info-subtle);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius-lg);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+
+  --breakpoint-xs: 22.5rem;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, Consolas, "Liberation Mono", monospace;
+
+  --text-display: clamp(1.75rem, 1rem + 5vw, 4rem);
+  --text-display--line-height: 1.05;
+  --text-h1: clamp(1.5rem, 1rem + 3.5vw, 3rem);
+  --text-h1--line-height: 1.1;
+  --text-h2: clamp(1.375rem, 1rem + 2.5vw, 2.25rem);
+  --text-h2--line-height: 1.15;
+  --text-h3: clamp(1.125rem, 1rem + 1vw, 1.5rem);
+  --text-h3--line-height: 1.25;
+  --text-body-lg: clamp(1rem, 0.95rem + 0.4vw, 1.125rem);
+  --text-body-lg--line-height: 1.6;
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  ::selection {
+    background: var(--primary-subtle);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@utility break-anywhere {
+  overflow-wrap: anywhere;
+}
+
+@utility page-pad {
+  padding-left: var(--page-pad);
+  padding-right: var(--page-pad);
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@leadforge/config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./eslint/base": "./eslint/base.js",
+    "./eslint/nest": "./eslint/nest.js",
+    "./eslint/next": "./eslint/next.js",
+    "./tsconfig/node.json": "./tsconfig/node.json",
+    "./tsconfig/nest.json": "./tsconfig/nest.json",
+    "./tsconfig/react-lib.json": "./tsconfig/react-lib.json"
+  },
+  "dependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^10.0.0",
+    "eslint-plugin-security": "^3.0.0",
+    "globals": "^16.0.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}
