@@ -21,7 +21,8 @@ export interface BreadcrumbsProps extends React.HTMLAttributes<HTMLElement> {
   renderLink?: (item: BreadcrumbItem, className: string) => React.ReactNode;
 }
 
-const linkClass = "truncate text-muted-foreground hover:text-foreground";
+const linkClass =
+  "truncate rounded-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline";
 
 /** Full trail from 480px; below that the middle items collapse into a menu. */
 export function Breadcrumbs({ items, renderLink, className, ...props }: BreadcrumbsProps) {
@@ -33,7 +34,7 @@ export function Breadcrumbs({ items, renderLink, className, ...props }: Breadcru
         </a>
       ))
     ) : (
-      <span aria-current="page" className="text-foreground truncate font-medium">
+      <span aria-current="page" className="text-foreground truncate">
         {item.label}
       </span>
     );
@@ -63,7 +64,7 @@ export function Breadcrumbs({ items, renderLink, className, ...props }: Breadcru
               <DropdownMenu>
                 <DropdownMenuTrigger
                   aria-label="Show hidden breadcrumb items"
-                  className="hover:bg-muted flex size-8 items-center justify-center rounded-md"
+                  className="state-layer text-muted-foreground flex size-8 items-center justify-center rounded-full"
                 >
                   <MoreHorizontal aria-hidden className="size-4" />
                 </DropdownMenuTrigger>

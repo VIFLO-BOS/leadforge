@@ -20,7 +20,7 @@ export class InvitationsController {
 
   @Get(":token")
   @Public()
-  @Throttle({ auth: { limit: 20, ttl: 60_000 } })
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @ApiZodResponse(200, InvitationPreview)
   preview(@Param("token") token: string) {
     return this.invitations.preview(token);

@@ -23,17 +23,24 @@ const AUDIENCE = "leadforge-api";
  */
 @Injectable()
 export class TokenService implements OnModuleInit {
-  private privateKey!: ImportedKey;
+  private privateKey: ImportedKey | null = null;
   private publicKey!: ImportedKey;
 
   constructor(@Inject(ENV) private readonly env: ServerEnv) {}
 
   async onModuleInit(): Promise<void> {
-    this.privateKey = await importJWK(decodeJwk(this.env.JWT_PRIVATE_KEY), ALG);
+    // The worker runs without the signing key (it never issues tokens); the API requires it at boot.
+    this.privateKey = this.env.JWT_PRIVATE_KEY
+      ? await importJWK(decodeJwk(this.env.JWT_PRIVATE_KEY), ALG)
+      : null;
     this.publicKey = await importJWK(decodeJwk(this.env.JWT_PUBLIC_KEY), ALG);
   }
 
   async signAccessToken(claims: AccessTokenClaims): Promise<string> {
+    if (!this.privateKey)
+      throw new Error(
+        "JWT_PRIVATE_KEY is not set in this process; only the API signs access tokens",
+      );
     return new SignJWT({ sid: claims.sid, ev: claims.ev })
       .setProtectedHeader({ alg: ALG, typ: "JWT" })
       .setSubject(claims.sub)

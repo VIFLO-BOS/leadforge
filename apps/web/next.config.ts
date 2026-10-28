@@ -11,13 +11,23 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // NEXT_DIST_DIR lets a production build and `next start` (for example an agent's e2e run) use
+  // their own folder instead of `.next`, which a running `next dev` in this app also writes to.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   reactStrictMode: true,
   poweredByHeader: false,
   transpilePackages: ["@leadforge/ui"],
   typedRoutes: false,
   async rewrites() {
     // Same-origin API calls so auth cookies and CSRF work without CORS.
-    return [{ source: "/api/:path*", destination: `${apiOrigin}/api/:path*` }];
+    const rules = [{ source: "/api/:path*", destination: `${apiOrigin}/api/:path*` }];
+    // Dev-only component gallery. A "%5F_design" folder trips a Next 15.5 build invariant
+    // (/_not-found entry lookup), so the page lives at app/(dev)/app/design-gallery and the
+    // documented URL is a rewrite. Production builds get neither the rewrite nor the gallery.
+    if (process.env.NODE_ENV !== "production") {
+      rules.push({ source: "/app/_design", destination: "/app/design-gallery" });
+    }
+    return rules;
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

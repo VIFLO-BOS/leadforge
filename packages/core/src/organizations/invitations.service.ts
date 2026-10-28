@@ -8,6 +8,7 @@ import {
 } from "@leadforge/contracts";
 import { PrismaService } from "@leadforge/db-postgres";
 import { ENV } from "../config/env.module.js";
+import { pendingDeletionError } from "./organizations.service.js";
 import { AppError } from "../common/errors/app.error.js";
 import type { OrganizationScope } from "../common/request/request-context.js";
 import { AuditService, type AuditContext } from "../audit/audit.service.js";
@@ -17,6 +18,7 @@ import { TokenService } from "../auth/token.service.js";
 import { UserRepository } from "../auth/repositories/user.repository.js";
 import { InvitationRepository } from "./repositories/invitation.repository.js";
 import { MembershipRepository } from "./repositories/membership.repository.js";
+import { EntitlementsService, memberLimitReached } from "../entitlements/entitlements.service.js";
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -31,6 +33,7 @@ export class InvitationsService {
     private readonly tokens: TokenService,
     private readonly queue: QueueService,
     private readonly audit: AuditService,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   async list(organizationId: string): Promise<InvitationSummary[]> {
@@ -62,7 +65,14 @@ export class InvitationsService {
     if (!inviter || !org) throw AppError.notFound("Organization");
 
     const { token, hash } = this.tokens.issueOneTimeToken();
+    const cap = await this.entitlements.maxMembers(scope.organizationId);
     const invitation = await this.prisma.$transaction(async (tx) => {
+      // Member cap (Phase 6): active members plus live invitations (a re-invite replaces the old one).
+      await this.memberships.lockOrganization(scope.organizationId, tx);
+      const used =
+        (await this.memberships.countActive(scope.organizationId, tx)) +
+        (await this.invitations.countLive(scope.organizationId, tx, dto.email));
+      if (used + 1 > cap) throw memberLimitReached(cap, used);
       await this.invitations.revokePendingForEmail(scope.organizationId, dto.email, tx);
       return this.invitations.create(
         {
@@ -160,12 +170,21 @@ export class InvitationsService {
       throw new AppError("INVALID_TOKEN", "This invitation is invalid, expired or already used");
     const user = await this.users.findById(userId);
     if (!user) throw new AppError("UNAUTHENTICATED");
+    // Stage 10: nobody joins an organization that is scheduled for deletion.
+    if (invitation.organization.deletionRequestedAt)
+      throw pendingDeletionError(invitation.organization.purgeAfter);
     if (user.email.toLowerCase() !== invitation.email.toLowerCase()) {
       throw AppError.forbidden("This invitation was sent to a different email address");
     }
     const existing = await this.memberships.find(invitation.organizationId, userId);
+    const cap = existing ? 0 : await this.entitlements.maxMembers(invitation.organizationId);
     await this.prisma.$transaction(async (tx) => {
       if (!existing) {
+        // Member cap (Phase 6): checked again at acceptance under the organization row lock, so a
+        // downgrade after the invitation, or concurrent acceptances, cannot exceed the plan.
+        await this.memberships.lockOrganization(invitation.organizationId, tx);
+        const active = await this.memberships.countActive(invitation.organizationId, tx);
+        if (active + 1 > cap) throw memberLimitReached(cap, active);
         await this.memberships.create(
           { organizationId: invitation.organizationId, userId, role: invitation.role },
           tx,

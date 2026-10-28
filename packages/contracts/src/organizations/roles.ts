@@ -19,6 +19,8 @@ export const Permission = z.enum([
   "businesses:read",
   "businesses:write",
   "discovery:run",
+  /** Website analysis, website-contacts enrichment, email checks and refresh (fetches the business's site). */
+  "analysis:run",
   "dedup:write",
   "lists:manage",
   "lists:manage_own",
@@ -32,31 +34,45 @@ export const Permission = z.enum([
   "members:manage",
   "members:manage_owners",
   "billing:manage",
+  /** Phase 6: request a refund of a payment (owner only). */
+  "billing:refund",
   "organization:settings",
   "organization:delete",
+  /** Stage 10: request and download the whole-organization data export (member emails included; owner only). */
+  "organization:export",
   "audit:read",
+  /** Own in-app notifications and notification preferences. Every member. */
+  "notifications:read",
+  /** Credit ledger (Usage page). Balance is readable with businesses:read. */
+  "usage:read",
 ]);
 export type Permission = z.infer<typeof Permission>;
 
-const ALL_READ: Permission[] = ["businesses:read"];
+const ALL_READ: Permission[] = ["businesses:read", "notifications:read"];
 
 export const ROLE_PERMISSIONS: Record<OrganizationRole, readonly Permission[]> = {
   owner: Permission.options,
   admin: Permission.options.filter(
     (p) =>
-      p !== "members:manage_owners" && p !== "organization:settings" && p !== "organization:delete",
+      p !== "members:manage_owners" &&
+      p !== "organization:settings" &&
+      p !== "organization:delete" &&
+      p !== "organization:export" &&
+      p !== "billing:refund",
   ),
   researcher: [
     ...ALL_READ,
     "businesses:write",
     "discovery:run",
+    "analysis:run",
     "dedup:write",
     "lists:manage",
     "leads:assign",
     "exports:create",
+    "usage:read",
   ],
   sales_rep: [...ALL_READ, "lists:manage_own", "pipeline:write", "exports:create_assigned"],
-  analyst: [...ALL_READ, "exports:create"],
+  analyst: [...ALL_READ, "exports:create", "usage:read"],
 };
 
 export function roleHasPermission(role: OrganizationRole, permission: Permission): boolean {

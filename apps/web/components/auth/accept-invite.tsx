@@ -8,13 +8,19 @@ import { useState } from "react";
 import { Badge, Button, ErrorState, Skeleton } from "@leadforge/ui";
 import { apiFetch, isApiError } from "@/lib/api";
 import { friendlyMessage, requestIdOf } from "@/lib/errors";
+import { formatDate } from "@/lib/format";
+import { isPendingDeletion, pendingDeletionPurgeAfter } from "@/lib/org-lifecycle";
 import { setActiveOrgId } from "@/lib/org";
-import { AuthHeading } from "./auth-heading";
+import { AuthLink, AuthPanel } from "./auth-heading";
 
 export function AcceptInvite({ token }: { token: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [error, setError] = useState<{ message: string; requestId?: string } | null>(null);
+  const [error, setError] = useState<{
+    title?: string;
+    message: string;
+    requestId?: string;
+  } | null>(null);
   const [accepting, setAccepting] = useState(false);
 
   const preview = useQuery({
@@ -43,6 +49,15 @@ export function AcceptInvite({ token }: { token: string }) {
         router.push(`/sign-in?next=${encodeURIComponent(`/invite/${token}`)}`);
         return;
       }
+      if (isPendingDeletion(err)) {
+        const date = pendingDeletionPurgeAfter(err);
+        setError({
+          title: "This organization is being deleted",
+          message: `It is scheduled for deletion${date ? ` on ${formatDate(date)}` : ""}, so it is not taking new members. If you expected to join, contact the person who invited you.`,
+          requestId: requestIdOf(err),
+        });
+        return;
+      }
       setError({
         message: friendlyMessage(err, "The invitation could not be accepted."),
         requestId: requestIdOf(err),
@@ -54,74 +69,77 @@ export function AcceptInvite({ token }: { token: string }) {
 
   if (preview.isPending) {
     return (
-      <div className="flex flex-col gap-3">
-        <Skeleton className="h-7 w-2/3" />
+      <div
+        className="flex flex-col gap-4"
+        role="status"
+        aria-busy="true"
+        aria-label="Loading invitation"
+      >
+        <Skeleton className="size-11 rounded-xl" />
+        <Skeleton className="h-9 w-2/3" />
         <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-40 self-end rounded-full" />
       </div>
     );
   }
 
   if (preview.isError) {
     return (
-      <>
-        <AuthHeading title="Invitation not available" />
-        <ErrorState
-          title="We could not load this invitation"
-          message={friendlyMessage(
-            preview.error,
-            "This invitation may have expired or been revoked.",
-          )}
-          requestId={requestIdOf(preview.error)}
-          onRetry={() => void preview.refetch()}
-        />
-        <p className="text-muted-foreground mt-6 text-center text-sm">
-          <Link
-            href="/sign-in"
-            className="text-primary font-medium underline-offset-4 hover:underline"
-          >
-            Go to sign in
-          </Link>
-        </p>
-      </>
+      <AuthPanel
+        title="Invitation not available"
+        description="This invitation may have expired or been revoked."
+      >
+        <div className="flex flex-col gap-5">
+          <ErrorState
+            title="We could not load this invitation"
+            message={friendlyMessage(
+              preview.error,
+              "This invitation may have expired or been revoked.",
+            )}
+            requestId={requestIdOf(preview.error)}
+            onRetry={() => void preview.refetch()}
+          />
+          <AuthLink href="/sign-in">Go to sign in</AuthLink>
+        </div>
+      </AuthPanel>
     );
   }
 
   const inv = preview.data;
 
   return (
-    <>
-      <AuthHeading
-        title={`Join ${inv.organizationName}`}
-        description={
-          <>
-            You were invited as <Badge variant="primary">{ROLE_LABELS[inv.role]}</Badge> using{" "}
-            <span className="break-anywhere text-foreground font-medium">{inv.email}</span>.
-          </>
-        }
-      />
-      <p className="text-muted-foreground mb-4 text-xs">
-        This invitation expires on {new Date(inv.expiresAt).toLocaleDateString()}. Sign in or create
-        an account with the same email before accepting.
-      </p>
-      {error ? (
-        <ErrorState
-          title="Could not accept"
-          message={error.message}
-          requestId={error.requestId}
-          className="mb-4"
-        />
-      ) : null}
-      <div className="flex flex-col gap-2">
-        <Button size="lg" className="w-full" onClick={accept} loading={accepting}>
-          Accept invitation
-        </Button>
-        <Button asChild variant="outline" className="w-full">
-          <Link href={`/sign-up?next=${encodeURIComponent(`/invite/${token}`)}`}>
-            Create an account first
-          </Link>
-        </Button>
+    <AuthPanel
+      title={`Join ${inv.organizationName}`}
+      description={
+        <>
+          You were invited as <Badge variant="primary">{ROLE_LABELS[inv.role]}</Badge> using{" "}
+          <span className="break-anywhere font-medium">{inv.email}</span>.
+        </>
+      }
+    >
+      <div className="flex flex-col gap-5">
+        <p className="text-muted-foreground text-sm">
+          This invitation expires on {new Date(inv.expiresAt).toLocaleDateString()}. Sign in or
+          create an account with the same email before accepting.
+        </p>
+        {error ? (
+          <ErrorState
+            title={error.title ?? "Could not accept"}
+            message={error.message}
+            requestId={error.requestId}
+          />
+        ) : null}
+        <div className="mt-2 flex flex-col-reverse gap-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
+          <Button asChild variant="text" className="-ml-3 self-start min-[360px]:self-auto">
+            <Link href={`/sign-up?next=${encodeURIComponent(`/invite/${token}`)}`}>
+              Create an account first
+            </Link>
+          </Button>
+          <Button onClick={accept} loading={accepting}>
+            Accept invitation
+          </Button>
+        </div>
       </div>
-    </>
+    </AuthPanel>
   );
 }

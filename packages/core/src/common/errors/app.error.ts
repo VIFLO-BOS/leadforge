@@ -1,4 +1,9 @@
-import { ERROR_STATUS, type ErrorCode, type ErrorDetail } from "@leadforge/contracts";
+import {
+  ERROR_STATUS,
+  RETRY_AFTER_DETAIL_PATH,
+  type ErrorCode,
+  type ErrorDetail,
+} from "@leadforge/contracts";
 
 /**
  * Domain error carrying a stable code. The exception filter maps it to the
@@ -8,13 +13,32 @@ export class AppError extends Error {
   readonly code: ErrorCode;
   readonly status: number;
   readonly details: ErrorDetail[] | undefined;
+  /** 429 only: whole seconds until a retry can succeed, sent as `Retry-After` (60 when unset). */
+  readonly retryAfterSeconds: number | undefined;
 
-  constructor(code: ErrorCode, message?: string, details?: ErrorDetail[]) {
+  constructor(
+    code: ErrorCode,
+    message?: string,
+    details?: ErrorDetail[],
+    options: { retryAfterSeconds?: number } = {},
+  ) {
     super(message ?? defaultMessage(code));
     this.name = "AppError";
     this.code = code;
     this.status = ERROR_STATUS[code];
     this.details = details;
+    this.retryAfterSeconds = options.retryAfterSeconds;
+  }
+
+  /**
+   * 429 RATE_LIMITED with a known wait: `Retry-After` and the `retryAfterSeconds` detail carry the
+   * same whole number of seconds (at least 1).
+   */
+  static rateLimited(message: string, retryAfterSeconds: number): AppError {
+    const seconds = wholeRetrySeconds(retryAfterSeconds);
+    return new AppError("RATE_LIMITED", message, retryAfterDetails(seconds), {
+      retryAfterSeconds: seconds,
+    });
   }
 
   static notFound(what = "Resource"): AppError {
@@ -32,6 +56,16 @@ export class AppError extends Error {
   static validation(details: ErrorDetail[], message = "Request validation failed"): AppError {
     return new AppError("VALIDATION_FAILED", message, details);
   }
+}
+
+/** A retry wait as whole seconds, at least 1 (a Retry-After of 0 would invite an immediate retry). */
+export function wholeRetrySeconds(seconds: number): number {
+  return Number.isFinite(seconds) ? Math.max(1, Math.ceil(seconds)) : 1;
+}
+
+/** The `details` entry naming the retry wait (`RETRY_AFTER_DETAIL_PATH`). */
+export function retryAfterDetails(seconds: number): ErrorDetail[] {
+  return [{ path: RETRY_AFTER_DETAIL_PATH, message: String(seconds) }];
 }
 
 function defaultMessage(code: ErrorCode): string {

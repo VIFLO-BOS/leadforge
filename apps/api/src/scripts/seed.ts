@@ -1,10 +1,16 @@
 /**
- * Development seed. Creates placeholder plans (flagged is_placeholder) and one synthetic
- * organization with an owner. Refuses to run in production. All data is clearly synthetic.
+ * Development seed. Creates one synthetic organization with an owner, sample business records
+ * labeled "(Sample)" (see seed-businesses.ts), a development credit grant (see seed-credits.ts),
+ * and plans and credit packs from the billing catalogue with development entitlement overrides
+ * (see seed-billing.ts; every built-in price is a placeholder flagged is_placeholder).
+ * Idempotent. Refuses to run in production. All data is clearly synthetic.
  */
 import argon2 from "argon2";
 import { PrismaClient } from "@prisma/client";
 import { v7 as uuidv7 } from "uuid";
+import { seedSampleBusinesses } from "./seed-businesses.js";
+import { seedDevCreditGrant } from "./seed-credits.js";
+import { seedBilling } from "./seed-billing.js";
 
 const OWNER_EMAIL = "owner@example.test";
 const OWNER_PASSWORD = "synthetic-owner-pass-2026";
@@ -13,60 +19,6 @@ async function main(): Promise<void> {
   if (process.env.NODE_ENV === "production") throw new Error("Refusing to seed in production");
   const prisma = new PrismaClient();
   try {
-    const plans = [
-      {
-        code: "starter",
-        name: "Starter",
-        interval: "monthly",
-        priceMinor: 0n,
-        includedCredits: 200,
-        maxMembers: 2,
-        exportRowCap: 1000,
-        sortOrder: 1,
-      },
-      {
-        code: "growth",
-        name: "Growth",
-        interval: "monthly",
-        priceMinor: 0n,
-        includedCredits: 2000,
-        maxMembers: 10,
-        exportRowCap: 25000,
-        sortOrder: 2,
-      },
-      {
-        code: "scale",
-        name: "Scale",
-        interval: "monthly",
-        priceMinor: 0n,
-        includedCredits: 10000,
-        maxMembers: 50,
-        exportRowCap: 250000,
-        sortOrder: 3,
-      },
-    ] as const;
-    for (const p of plans) {
-      await prisma.plan.upsert({
-        where: { code: p.code },
-        update: { isPlaceholder: true },
-        create: {
-          id: uuidv7(),
-          code: p.code,
-          name: p.name,
-          description: "Placeholder plan. Pricing has not been published.",
-          interval: p.interval,
-          priceMinor: p.priceMinor,
-          currency: "NGN",
-          includedCredits: p.includedCredits,
-          maxMembers: p.maxMembers,
-          exportRowCap: p.exportRowCap,
-          isActive: true,
-          isPlaceholder: true,
-          sortOrder: p.sortOrder,
-        },
-      });
-    }
-
     const existing = await prisma.user.findUnique({ where: { email: OWNER_EMAIL } });
     if (!existing) {
       const passwordHash = await argon2.hash(OWNER_PASSWORD, {
@@ -103,8 +55,15 @@ async function main(): Promise<void> {
       });
     }
 
+    const owner = await prisma.user.findUnique({ where: { email: OWNER_EMAIL } });
+    const org = await prisma.organization.findUnique({ where: { slug: "acme-demo-synthetic" } });
+    if (!owner || !org) throw new Error("Seeded owner or organization is missing");
+    const billing = await seedBilling(org.id);
+    const report = await seedSampleBusinesses(org.id, owner.id);
+    const credits = await seedDevCreditGrant(org.id, owner.id);
+
     process.stdout.write(
-      `Seed complete.\n  Sign in: ${OWNER_EMAIL} / ${OWNER_PASSWORD}\n  Plans: ${plans.length} placeholder plans (pricing not published)\n`,
+      `Seed complete.\n  Sign in: ${OWNER_EMAIL} / ${OWNER_PASSWORD}\n${billing.map((l) => `  ${l}`).join("\n")}\n  Sample businesses:\n${report.map((l) => `    ${l}`).join("\n")}\n  Credits: ${credits}\n`,
     );
   } finally {
     await prisma.$disconnect();

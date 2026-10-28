@@ -194,7 +194,9 @@ describe("refresh token rotation", () => {
       .expect(401);
     expect(replay.body.error.code).toBe("UNAUTHENTICATED");
 
-    // The legitimate client's current refresh token is now dead too.
+    // The legitimate client's current refresh token is now dead too, and (Phase 7) so is its
+    // access token: reuse detection revokes the whole family at once.
+    await agent.get(`${API}/auth/me`).expect(401);
     await agent.post(`${API}/auth/refresh`).expect(401);
   });
 });
@@ -221,8 +223,9 @@ describe("password reset", () => {
       .send({ token, password: "Brand-New-Passw0rd-456!" })
       .expect(200);
 
-    await agent.get(`${API}/auth/me`).expect(200); // access token still valid until expiry
-    await agent.post(`${API}/auth/refresh`).expect(401); // but the session is revoked
+    // Phase 7: the reset revokes every session at once, access tokens included (no 15-minute tail).
+    await agent.get(`${API}/auth/me`).expect(401);
+    await agent.post(`${API}/auth/refresh`).expect(401);
 
     await h
       .agent()

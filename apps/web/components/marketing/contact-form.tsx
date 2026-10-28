@@ -2,10 +2,11 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ContactRequest } from "@leadforge/contracts";
+import { CircleCheck } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import type { z } from "zod";
-import { Button, ErrorState, FormField, Input, Textarea } from "@leadforge/ui";
+import { Button, ErrorState, TextAreaField, TextField } from "@leadforge/ui";
 import { apiFetch, isApiError } from "@/lib/api";
 import { friendlyMessage, requestIdOf } from "@/lib/errors";
 
@@ -55,17 +56,15 @@ export function ContactForm({
 
   if (status.kind === "sent") {
     return (
-      <div role="status" className="border-border bg-surface rounded-lg border p-6">
-        <h2 className="text-base font-semibold">Message received</h2>
-        <p className="text-muted-foreground mt-1 text-sm">
+      <div role="status" className="flex flex-col items-start gap-4 py-4">
+        <span className="bg-success-subtle text-success flex size-12 items-center justify-center rounded-full">
+          <CircleCheck aria-hidden className="size-6" />
+        </span>
+        <h2 className="text-h3">Message received</h2>
+        <p className="text-muted-foreground text-sm">
           Thank you. We read every message and reply by email.
         </p>
-        <Button
-          type="button"
-          variant="outline"
-          className="mt-4"
-          onClick={() => setStatus({ kind: "idle" })}
-        >
+        <Button type="button" variant="outline" onClick={() => setStatus({ kind: "idle" })}>
           Send another message
         </Button>
       </div>
@@ -75,43 +74,43 @@ export function ContactForm({
   const { errors } = form.formState;
 
   return (
-    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <FormField id="contact-name" label="Your name" required error={errors.name?.message}>
-          <Input
-            id="contact-name"
-            autoComplete="name"
-            invalid={Boolean(errors.name)}
-            {...form.register("name")}
-          />
-        </FormField>
-        <FormField id="contact-email" label="Email" required error={errors.email?.message}>
-          <Input
-            id="contact-email"
-            type="email"
-            autoComplete="email"
-            invalid={Boolean(errors.email)}
-            {...form.register("email")}
-          />
-        </FormField>
+    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <TextField
+          id="contact-name"
+          label="Your name"
+          required
+          autoComplete="name"
+          error={errors.name?.message}
+          {...form.register("name")}
+        />
+        <TextField
+          id="contact-email"
+          label="Email"
+          type="email"
+          required
+          autoComplete="email"
+          inputMode="email"
+          error={errors.email?.message}
+          {...form.register("email")}
+        />
       </div>
-      <FormField id="contact-company" label="Company" error={errors.company?.message}>
-        <Input id="contact-company" autoComplete="organization" {...form.register("company")} />
-      </FormField>
-      <FormField
+      <TextField
+        id="contact-company"
+        label="Company"
+        autoComplete="organization"
+        error={errors.company?.message}
+        {...form.register("company")}
+      />
+      <TextAreaField
         id="contact-message"
         label="Message"
         required
-        error={errors.message?.message}
+        rows={6}
         hint="At least 10 characters."
-      >
-        <Textarea
-          id="contact-message"
-          rows={6}
-          invalid={Boolean(errors.message)}
-          {...form.register("message")}
-        />
-      </FormField>
+        error={errors.message?.message}
+        {...form.register("message")}
+      />
 
       {/* Honeypot: hidden from people, filled by bots. Must stay empty. */}
       <div className="absolute -left-[9999px] top-auto h-px w-px overflow-hidden" aria-hidden>
@@ -130,15 +129,15 @@ export function ContactForm({
         <ErrorState title="Could not send" message={status.message} requestId={status.requestId} />
       ) : null}
 
-      <div className="flex flex-col gap-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
-        <p className="text-muted-foreground text-xs">
+      <div className="flex flex-col gap-4 min-[480px]:flex-row min-[480px]:items-center min-[480px]:justify-between">
+        <p className="text-muted-foreground text-[13px]">
           We use your details only to reply to this message.
         </p>
         <Button
           type="submit"
           size="lg"
           loading={form.formState.isSubmitting}
-          className="w-full min-[360px]:w-auto"
+          className="w-full min-[480px]:w-auto"
         >
           Send message
         </Button>

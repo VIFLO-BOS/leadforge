@@ -4,18 +4,21 @@ import { ACCESS_COOKIE } from "@leadforge/contracts";
 import { AppError } from "../../common/errors/app.error.js";
 import type { RequestWithContext } from "../../common/request/request-context.js";
 import { TokenService } from "../token.service.js";
+import { SessionSecurityService } from "../session-security.service.js";
 import { IS_PUBLIC_KEY } from "../decorators.js";
 
 /**
  * Verifies the access token from the cookie (or Authorization: Bearer) and attaches
- * req.user. Public routes pass through. Session revocation is enforced at refresh time
- * and by the short access-token lifetime; org-level guards re-check membership.
+ * req.user. Public routes pass through. A token whose session was revoked (sign-out, device
+ * sign-out, password reset, refresh-token reuse) is refused at once through the Redis list
+ * kept by SessionSecurityService; org-level guards re-check membership.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly tokens: TokenService,
+    private readonly sessionSecurity: SessionSecurityService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -33,6 +36,7 @@ export class AuthGuard implements CanActivate {
 
     try {
       const claims = await this.tokens.verifyAccessToken(token);
+      if (await this.sessionSecurity.isRevoked(claims.sid)) throw new AppError("UNAUTHENTICATED");
       req.user = { id: claims.sub, sessionId: claims.sid, emailVerified: claims.ev };
       return true;
     } catch (err) {

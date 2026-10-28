@@ -2,133 +2,214 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Badge, Tooltip, TooltipContent, TooltipTrigger, cn } from "@leadforge/ui";
-import { LogoMark } from "@/components/marketing/logo";
-import { SITE_NAME } from "@/lib/site";
-import { NAV_GROUPS, type NavItem } from "./nav-config";
+import { motion } from "framer-motion";
+import { SPRING, Tooltip, TooltipContent, TooltipTrigger, cn, useMotionSafe } from "@leadforge/ui";
+import { useWorkspace } from "./app-shell";
+import { isNavItemActive, navGroupsFor, type NavItem } from "./nav-config";
 
+/**
+ * Material navigation drawer (`variant="drawer"`, 256px) or navigation rail (`variant="rail"`,
+ * 80px). The active destination gets a pill-shaped indicator in the secondary container.
+ * Items without an href are later-phase features: they render disabled with a visible
+ * "Soon" label and no link.
+ */
 export function SidebarNav({
-  collapsed = false,
+  variant = "drawer",
   onNavigate,
+  className,
 }: {
-  collapsed?: boolean;
+  variant?: "drawer" | "rail";
   onNavigate?: () => void;
+  className?: string;
 }) {
   const pathname = usePathname();
+  const { org } = useWorkspace();
+  const groups = navGroupsFor(org.role);
 
-  const isActive = (item: NavItem) =>
-    Boolean(item.href) &&
-    (item.exact
-      ? pathname === item.href
-      : pathname === item.href || pathname.startsWith(`${item.href}/`));
-
-  return (
-    <nav aria-label="Dashboard" className="flex h-full min-w-0 flex-col">
-      <div
-        className={cn(
-          "border-border flex h-[var(--topbar-h)] shrink-0 items-center gap-2 border-b px-3",
-          collapsed && "justify-center px-0",
-        )}
-      >
-        <Link
-          href="/app"
-          className="flex min-w-0 items-center gap-2 rounded-md"
-          aria-label={`${SITE_NAME} overview`}
-        >
-          <LogoMark />
-          {!collapsed ? <span className="truncate text-sm font-semibold">{SITE_NAME}</span> : null}
-        </Link>
-      </div>
-
-      <div className="scrollbar-thin flex-1 overflow-y-auto px-2 py-3">
-        {NAV_GROUPS.map((group) => (
-          <div key={group.title} className="mb-4">
-            {!collapsed ? (
-              <p className="text-muted-foreground px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider">
-                {group.title}
-              </p>
-            ) : (
-              <div aria-hidden className="bg-border mx-2 mb-2 h-px" />
-            )}
-            <ul className="flex flex-col gap-0.5">
-              {group.items.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(item);
-                const base =
-                  "flex min-h-10 w-full min-w-0 items-center gap-2.5 rounded-md px-2 text-sm";
-
-                if (!item.href) {
-                  const row = (
-                    <li
-                      key={item.label}
-                      aria-disabled="true"
-                      className={cn(
-                        base,
-                        "text-muted-foreground/70 cursor-not-allowed",
-                        collapsed && "justify-center px-0",
-                      )}
-                    >
-                      <Icon aria-hidden className="size-4 shrink-0" />
-                      {!collapsed ? (
-                        <>
-                          <span className="flex-1 truncate">{item.label}</span>
-                          <Badge variant="outline" className="shrink-0 text-[10px]">
-                            Coming soon
-                          </Badge>
-                        </>
-                      ) : (
-                        <span className="sr-only">{item.label} (coming soon)</span>
-                      )}
-                    </li>
-                  );
-                  return collapsed ? (
-                    <Tooltip key={item.label}>
-                      <TooltipTrigger asChild>{row}</TooltipTrigger>
-                      <TooltipContent side="right">{item.label}: coming soon</TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    row
-                  );
-                }
-
-                const link = (
-                  <li key={item.label}>
-                    <Link
-                      href={item.href}
-                      onClick={onNavigate}
-                      aria-current={active ? "page" : undefined}
-                      className={cn(
-                        base,
-                        "text-muted-foreground hover:bg-muted hover:text-foreground transition-colors",
-                        active && "bg-primary-subtle text-foreground font-medium",
-                        collapsed && "justify-center px-0",
-                      )}
-                    >
-                      <Icon
-                        aria-hidden
-                        className={cn("size-4 shrink-0", active && "text-primary")}
-                      />
-                      {!collapsed ? (
-                        <span className="truncate">{item.label}</span>
-                      ) : (
-                        <span className="sr-only">{item.label}</span>
-                      )}
-                    </Link>
-                  </li>
-                );
-                return collapsed ? (
-                  <Tooltip key={item.label}>
-                    <TooltipTrigger asChild>{link}</TooltipTrigger>
-                    <TooltipContent side="right">{item.label}</TooltipContent>
-                  </Tooltip>
-                ) : (
-                  link
-                );
-              })}
+  if (variant === "rail") {
+    return (
+      <nav aria-label="Dashboard" className={cn("flex min-w-0 flex-col", className)}>
+        {groups.map((group, gi) => (
+          <div key={group.title} className="flex flex-col">
+            {gi > 0 ? <div aria-hidden className="bg-border mx-5 my-2 h-px" /> : null}
+            <ul className="flex flex-col gap-1">
+              {group.items.map((item) => (
+                <RailItem
+                  key={item.label}
+                  item={item}
+                  active={isNavItemActive(item, pathname)}
+                  onNavigate={onNavigate}
+                />
+              ))}
             </ul>
           </div>
         ))}
-      </div>
+      </nav>
+    );
+  }
+
+  return (
+    <nav aria-label="Dashboard" className={cn("flex min-w-0 flex-col gap-4", className)}>
+      {groups.map((group) => (
+        <div key={group.title} className="flex min-w-0 flex-col">
+          <p className="text-muted-foreground px-4 pb-1.5 pt-1 text-xs font-medium">
+            {group.title}
+          </p>
+          <ul className="flex min-w-0 flex-col gap-0.5">
+            {group.items.map((item) => (
+              <DrawerItem
+                key={item.label}
+                item={item}
+                active={isNavItemActive(item, pathname)}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </ul>
+        </div>
+      ))}
     </nav>
+  );
+}
+
+function DrawerItem({
+  item,
+  active,
+  onNavigate,
+}: {
+  item: NavItem;
+  active: boolean;
+  onNavigate?: () => void;
+}) {
+  const Icon = item.icon;
+  const motionSafe = useMotionSafe();
+  const base =
+    "transition-ui flex h-10 w-full min-w-0 items-center gap-3 rounded-full px-4 text-sm font-medium [&_svg]:size-5 [&_svg]:shrink-0";
+
+  if (!item.href) {
+    return (
+      <li aria-disabled="true" className={cn(base, "text-muted-foreground cursor-not-allowed")}>
+        <Icon aria-hidden className="opacity-60" />
+        <span className="min-w-0 flex-1 truncate opacity-80">{item.label}</span>
+        <span className="border-border-strong text-muted-foreground shrink-0 rounded-full border px-1.5 py-px text-[10px] font-medium leading-4">
+          Soon
+        </span>
+        <span className="sr-only">(coming soon)</span>
+      </li>
+    );
+  }
+
+  return (
+    <li className="min-w-0">
+      <Link
+        href={item.href}
+        onClick={onNavigate}
+        aria-current={active ? "page" : undefined}
+        className={cn(
+          base,
+          "state-layer",
+          active ? "text-secondary-foreground" : "text-foreground",
+          active && !motionSafe && "bg-secondary",
+        )}
+      >
+        {active && motionSafe ? (
+          // The active pill slides between destinations on navigation.
+          <motion.span
+            layoutId="nav-drawer-active"
+            aria-hidden
+            transition={SPRING.slow}
+            style={{ borderRadius: 9999 }}
+            className="bg-secondary absolute inset-0 -z-[2]"
+          />
+        ) : null}
+        <Icon aria-hidden />
+        <span className="truncate">{item.label}</span>
+      </Link>
+    </li>
+  );
+}
+
+function RailItem({
+  item,
+  active,
+  onNavigate,
+}: {
+  item: NavItem;
+  active: boolean;
+  onNavigate?: () => void;
+}) {
+  const Icon = item.icon;
+  const motionSafe = useMotionSafe();
+  const label = item.railLabel ?? item.label.split(" ")[0] ?? item.label;
+  const indicator = (
+    <span
+      className={cn(
+        "transition-ui relative isolate flex h-8 w-14 items-center justify-center rounded-full [&_svg]:size-5",
+        active && "text-secondary-foreground",
+        active && !motionSafe && "bg-secondary",
+      )}
+    >
+      {active && motionSafe ? (
+        <motion.span
+          layoutId="nav-rail-active"
+          aria-hidden
+          transition={SPRING.slow}
+          style={{ borderRadius: 9999 }}
+          className="bg-secondary absolute inset-0 -z-[1]"
+        />
+      ) : null}
+      <Icon aria-hidden />
+    </span>
+  );
+  const text = (
+    <span className="max-w-full truncate px-1 text-[11px] font-medium leading-4">{label}</span>
+  );
+
+  if (!item.href) {
+    return (
+      <li>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              tabIndex={0}
+              aria-disabled="true"
+              className="text-muted-foreground flex cursor-not-allowed flex-col items-center gap-1 rounded-md py-1 opacity-60"
+            >
+              {indicator}
+              {text}
+              <span className="sr-only">{item.label} (coming soon)</span>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="right">{item.label}: coming soon</TooltipContent>
+        </Tooltip>
+      </li>
+    );
+  }
+
+  return (
+    <li>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Link
+            href={item.href}
+            onClick={onNavigate}
+            aria-current={active ? "page" : undefined}
+            // The name must contain the short rail text (label in name, WCAG 2.5.3).
+            aria-label={
+              item.label.toLowerCase().includes(label.toLowerCase())
+                ? item.label
+                : `${label} (${item.label})`
+            }
+            className={cn(
+              "group/rail transition-ui flex flex-col items-center gap-1 rounded-md py-1",
+              active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <span className="state-layer rounded-full">{indicator}</span>
+            {text}
+          </Link>
+        </TooltipTrigger>
+        <TooltipContent side="right">{item.label}</TooltipContent>
+      </Tooltip>
+    </li>
   );
 }

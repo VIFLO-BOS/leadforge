@@ -9,8 +9,14 @@ async function main(): Promise<void> {
   const env = app.get<ServerEnv>(ENV);
   const logger = app.get(Logger);
   await app.listen(env.API_PORT);
+  // Log the port actually bound (API_PORT), not API_URL, which names the public address.
+  const address = app.getHttpServer().address() as
+    { port?: number; address?: string } | string | null;
+  const port = typeof address === "object" && address?.port ? address.port : env.API_PORT;
+  const local = `http://localhost:${port}`;
   logger.log(
-    `LeadForge API listening on ${env.API_URL} (docs: ${env.NODE_ENV === "production" ? "disabled" : `${env.API_URL}/api/docs`})`,
+    { port, publicUrl: env.API_URL },
+    `LeadForge API listening on port ${port} (${local}; docs: ${env.NODE_ENV === "production" ? "disabled" : `${local}/api/docs`})`,
   );
 }
 

@@ -1,37 +1,32 @@
-import Link from "next/link";
-import { Badge } from "@leadforge/ui";
-
-const LEGAL_LINKS = [
-  { href: "/legal/privacy", label: "Privacy" },
-  { href: "/legal/terms", label: "Terms" },
-  { href: "/legal/acceptable-use", label: "Acceptable use" },
-  { href: "/legal/data-collection", label: "Data collection" },
-];
+import { Banner } from "@leadforge/ui";
+import { LegalNav } from "@/components/marketing/legal-nav";
 
 export default function LegalLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="container-prose py-12 md:py-16">
-      <nav
-        aria-label="Legal documents"
-        className="scrollbar-thin -mx-1 flex gap-1 overflow-x-auto pb-4"
-      >
-        {LEGAL_LINKS.map((l) => (
-          <Link
-            key={l.href}
-            href={l.href}
-            className="text-muted-foreground hover:bg-muted hover:text-foreground shrink-0 rounded-md px-3 py-2 text-sm"
-          >
-            {l.label}
-          </Link>
-        ))}
-      </nav>
-      <div className="mb-6 flex flex-wrap items-center gap-2">
-        <Badge variant="warning">Draft</Badge>
-        <p className="text-muted-foreground text-xs">
-          Pending legal review. Last updated 24 October 2026.
-        </p>
+    <>
+      {/* Reading progress: CSS scroll-driven (progressive enhancement), hidden when unsupported. */}
+      <div
+        aria-hidden
+        className="sda-progress bg-primary pointer-events-none fixed inset-x-0 top-0 z-50 h-[3px]"
+      />
+      <div className="container-marketing py-10 sm:py-16">
+        <div className="grid min-w-0 grid-cols-1 gap-8 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-16">
+          <aside className="min-w-0 lg:sticky lg:top-24 lg:self-start">
+            <LegalNav />
+          </aside>
+          <div className="min-w-0 max-w-3xl">
+            <Banner
+              tone="warning"
+              role="note"
+              className="mb-8"
+              title="Draft, pending legal review"
+              description="This page describes how LeadForge works today. A lawyer has not reviewed it yet, and items in brackets are placeholders for company details that must be completed before launch. Last updated 27 October 2026."
+              data-testid="legal-draft-notice"
+            />
+            <article className="prose-legal min-w-0">{children}</article>
+          </div>
+        </div>
       </div>
-      <article className="prose-legal min-w-0">{children}</article>
-    </div>
+    </>
   );
 }

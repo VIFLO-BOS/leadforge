@@ -3,7 +3,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { useState } from "react";
+import { MotionConfig } from "framer-motion";
 import { Toaster, TooltipProvider } from "@leadforge/ui";
+import { SessionWatcher } from "@/components/session-watcher";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(
@@ -22,10 +24,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
       enableSystem
       disableTransitionOnChange
     >
-      <QueryClientProvider client={client}>
-        <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
-        <Toaster />
-      </QueryClientProvider>
+      {/* framer-motion honours prefers-reduced-motion for anything not already gated. */}
+      <MotionConfig reducedMotion="user">
+        <QueryClientProvider client={client}>
+          <SessionWatcher />
+          <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
+          <Toaster />
+        </QueryClientProvider>
+      </MotionConfig>
     </ThemeProvider>
   );
 }

@@ -38,10 +38,9 @@ describe("public endpoints", () => {
       .agent()
       .post(`${API}/public/contact`)
       .send({ ...payload, website: "http://spam.example" })
-      .expect(400); // max(0) fails validation
+      .expect(400); // max(0) fails validation; the attempt still counts toward the limit
     expect(await h.prisma.contactSubmission.count()).toBe(1);
 
-    await h.agent().post(`${API}/public/contact`).send(payload).expect(202);
     await h.agent().post(`${API}/public/contact`).send(payload).expect(202);
     const limited = await h.agent().post(`${API}/public/contact`).send(payload).expect(429);
     expect(limited.body.error.code).toBe("RATE_LIMITED");

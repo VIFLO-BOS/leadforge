@@ -15,18 +15,22 @@ export interface MongoOptions {
 @Injectable()
 export class MongoService implements OnModuleInit, OnModuleDestroy {
   private readonly client: MongoClient;
-  private db!: Db;
+  private readonly db: Db;
 
-  constructor(@Inject(MONGO_OPTIONS) private readonly options: MongoOptions) {
+  constructor(@Inject(MONGO_OPTIONS) options: MongoOptions) {
     this.client = new MongoClient(options.uri, {
       maxPoolSize: 20,
       serverSelectionTimeoutMS: 5000,
+      // Wire compression when the server supports it (MongoDB and Atlas do): much less data on slow
+      // links (the Overture sync moves ~160k place documents). Negotiated; plain if unsupported.
+      compressors: ["zlib"],
     });
+    // Handles can be created before connecting; repositories grab theirs at construction.
+    this.db = this.client.db(options.dbName);
   }
 
   async onModuleInit(): Promise<void> {
     await this.client.connect();
-    this.db = this.client.db(this.options.dbName);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -34,7 +38,6 @@ export class MongoService implements OnModuleInit, OnModuleDestroy {
   }
 
   get database(): Db {
-    if (!this.db) throw new Error("MongoService used before onModuleInit");
     return this.db;
   }
 

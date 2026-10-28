@@ -8,14 +8,16 @@
   ],
   "exports": {
     ".": "./src/index.ts",
+    "./charts": "./src/charts.ts",
     "./styles.css": "./src/tokens.css"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
-    "test": "vitest run --passWithNoTests",
+    "test": "node scripts/check-contrast.mjs && vitest run --passWithNoTests",
     "build": "echo \"@leadforge/ui is consumed from source\"",
-    "clean": "echo noop"
+    "clean": "echo noop",
+    "check:contrast": "node scripts/check-contrast.mjs"
   },
   "peerDependencies": {
     "react": "^19.0.0",
@@ -36,10 +38,12 @@
     "@radix-ui/react-switch": "^1.1.0",
     "@radix-ui/react-tabs": "^1.1.0",
     "@radix-ui/react-tooltip": "^1.1.0",
+    "@tanstack/react-table": "^8.21.3",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "framer-motion": "^12.0.0",
     "lucide-react": "^1.0.0",
+    "recharts": "^3.10.1",
     "sonner": "^2.0.0",
     "tailwind-merge": "^3.0.0"
   },

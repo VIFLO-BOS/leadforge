@@ -1,0 +1,66 @@
+{
+  "plans": [
+    {
+      "code": "starter",
+      "name": "Starter",
+      "description": "Release e2e test price (fixture). Pricing has not been published.",
+      "interval": "monthly",
+      "priceMinor": 1000000,
+      "includedCredits": 200,
+      "maxMembers": 2,
+      "exportRowCap": 1000,
+      "isPlaceholder": true,
+      "sortOrder": 1
+    },
+    {
+      "code": "growth",
+      "name": "Growth",
+      "description": "Release e2e test price (fixture). Pricing has not been published.",
+      "interval": "monthly",
+      "priceMinor": 2500000,
+      "includedCredits": 2000,
+      "maxMembers": 10,
+      "exportRowCap": 25000,
+      "isPlaceholder": true,
+      "sortOrder": 2
+    },
+    {
+      "code": "scale",
+      "name": "Scale",
+      "description": "Release e2e test price (fixture). Pricing has not been published.",
+      "interval": "monthly",
+      "priceMinor": 7500000,
+      "includedCredits": 10000,
+      "maxMembers": 50,
+      "exportRowCap": 250000,
+      "isPlaceholder": true,
+      "sortOrder": 3
+    }
+  ],
+  "creditPacks": [
+    {
+      "code": "credits-500",
+      "name": "500 credits",
+      "credits": 500,
+      "priceMinor": 500000,
+      "isPlaceholder": true,
+      "sortOrder": 1
+    },
+    {
+      "code": "credits-2000",
+      "name": "2,000 credits",
+      "credits": 2000,
+      "priceMinor": 1800000,
+      "isPlaceholder": true,
+      "sortOrder": 2
+    },
+    {
+      "code": "credits-10000",
+      "name": "10,000 credits",
+      "credits": 10000,
+      "priceMinor": 8000000,
+      "isPlaceholder": true,
+      "sortOrder": 3
+    }
+  ]
+}

@@ -23,6 +23,18 @@
     "db:migrate:deploy": "pnpm --filter @leadforge/db-postgres exec prisma generate && pnpm --filter @leadforge/db-postgres db:migrate:deploy",
     "db:mongo:sync": "pnpm --filter @leadforge/db-mongo build && node -r dotenv/config packages/db-mongo/dist/scripts/sync.js",
     "db:seed": "pnpm --filter @leadforge/api build && node -r dotenv/config apps/api/dist/scripts/seed.js",
+    "overture:sync": "turbo run build --filter=@leadforge/worker && node -r dotenv/config apps/worker/dist/scripts/overture-sync.js",
+    "billing:catalogue": "pnpm --filter @leadforge/api build && node -r dotenv/config apps/api/dist/scripts/billing-catalogue.js",
+    "billing:webhook:replay": "pnpm --filter @leadforge/api build && node -r dotenv/config apps/api/dist/scripts/paystack-webhook-replay.js",
+    "queue:admin": "pnpm --filter @leadforge/worker build && node -r dotenv/config apps/worker/dist/scripts/queue-admin.js",
+    "org:purge": "turbo run build --filter=@leadforge/worker && node -r dotenv/config apps/worker/dist/scripts/org-purge.js",
+    "perf:seed": "pnpm --filter @leadforge/api build && node -r dotenv/config apps/api/dist/scripts/seed-perf.js",
+    "backup": "node infra/backup/backup.mjs",
+    "restore": "node infra/backup/restore.mjs",
+    "e2e:release": "node infra/e2e/release-stack.mjs run",
+    "e2e:release:up": "node infra/e2e/release-stack.mjs up",
+    "e2e:release:down": "node infra/e2e/release-stack.mjs down",
+    "e2e:release:drop": "node infra/e2e/release-stack.mjs drop",
     "prepare": "husky || true"
   },
   "devDependencies": {

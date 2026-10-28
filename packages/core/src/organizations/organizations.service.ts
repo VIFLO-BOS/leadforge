@@ -16,6 +16,7 @@ import type { OrganizationScope } from "../common/request/request-context.js";
 import { AuditService, type AuditContext } from "../audit/audit.service.js";
 import { OrganizationRepository } from "./repositories/organization.repository.js";
 import { MembershipRepository } from "./repositories/membership.repository.js";
+import { EntitlementsService, memberLimitReached } from "../entitlements/entitlements.service.js";
 
 const DEFAULT_CURRENCY_BY_COUNTRY: Record<string, string> = {
   NG: "NGN",
@@ -34,11 +35,121 @@ export class OrganizationsService {
     private readonly memberships: MembershipRepository,
     private readonly audit: AuditService,
     @Inject(REDIS) private readonly redis: Redis,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   /** Drops the authz membership cache entry so the next request re-reads PostgreSQL. */
   private async invalidateMembershipCache(userId: string, organizationId: string): Promise<void> {
     await this.redis.del(`lf:member:${userId}:${organizationId}`).catch(() => undefined);
+  }
+
+  private static dataSettingsKey(organizationId: string): string {
+    return `lf:org:data-settings:${organizationId}`;
+  }
+
+  /**
+   * Settings other modules need on hot paths (freshness window for field states, country
+   * for phone parsing defaults). Cached for 5 minutes and dropped on update.
+   */
+  async getDataSettings(
+    organizationId: string,
+  ): Promise<{ freshnessDays: number; country: string }> {
+    const key = OrganizationsService.dataSettingsKey(organizationId);
+    const cached = await this.redis.get(key).catch(() => null);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached) as { freshnessDays: number; country: string };
+        if (typeof parsed.freshnessDays === "number" && typeof parsed.country === "string")
+          return parsed;
+      } catch {
+        // fall through to the database
+      }
+    }
+    const org = await this.organizations.findById(organizationId);
+    if (!org) throw AppError.notFound("Organization");
+    const settings = { freshnessDays: org.freshnessDays, country: org.country };
+    await this.redis.set(key, JSON.stringify(settings), "EX", 300).catch(() => undefined);
+    return settings;
+  }
+
+  private static lifecycleKey(organizationId: string): string {
+    return `lf:org:lifecycle:${organizationId}`;
+  }
+
+  /**
+   * Stage 10: the organization's pending deletion, if any (cached 60 seconds; dropped when a
+   * deletion is requested or cancelled, so this process sees the change at once).
+   */
+  async deletionState(
+    organizationId: string,
+  ): Promise<{ pending: boolean; deletionRequestedAt: Date | null; purgeAfter: Date | null }> {
+    const key = OrganizationsService.lifecycleKey(organizationId);
+    const cached = await this.redis.get(key).catch(() => null);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached) as {
+          requestedAt: string | null;
+          purgeAfter: string | null;
+        };
+        return {
+          pending: Boolean(parsed.requestedAt),
+          deletionRequestedAt: parsed.requestedAt ? new Date(parsed.requestedAt) : null,
+          purgeAfter: parsed.purgeAfter ? new Date(parsed.purgeAfter) : null,
+        };
+      } catch {
+        // fall through to the database
+      }
+    }
+    const org = await this.organizations.findAnyById(organizationId);
+    const requestedAt = org?.deletionRequestedAt ?? null;
+    const purgeAfter = org?.purgeAfter ?? null;
+    await this.redis
+      .set(
+        key,
+        JSON.stringify({
+          requestedAt: requestedAt?.toISOString() ?? null,
+          purgeAfter: purgeAfter?.toISOString() ?? null,
+        }),
+        "EX",
+        60,
+      )
+      .catch(() => undefined);
+    return { pending: Boolean(requestedAt), deletionRequestedAt: requestedAt, purgeAfter };
+  }
+
+  /** Drops the cached deletion state (after a request, a cancellation or the purge). */
+  async forgetLifecycle(organizationId: string): Promise<void> {
+    await this.redis
+      .del(
+        OrganizationsService.lifecycleKey(organizationId),
+        OrganizationsService.dataSettingsKey(organizationId),
+      )
+      .catch(() => undefined);
+  }
+
+  /**
+   * Stage 10: 409 ORGANIZATION_PENDING_DELETION while a deletion is pending. Guards new paid or
+   * long work (discovery, analysis, imports, checkouts, invitations); reads, exports and CRM edits
+   * never call this.
+   */
+  async assertNotPendingDeletion(organizationId: string): Promise<void> {
+    const state = await this.deletionState(organizationId);
+    if (!state.pending) return;
+    throw pendingDeletionError(state.purgeAfter);
+  }
+
+  /** Background jobs re-check that the organization is live and the requester still a member. */
+  async isActiveMember(
+    organizationId: string,
+    userId: string,
+  ): Promise<{ active: boolean; role: OrganizationRole | null }> {
+    const membership = await this.memberships.findActive(organizationId, userId);
+    return { active: Boolean(membership), role: membership?.role ?? null };
+  }
+
+  /** Maintenance (usage rollup): live organization ids in id order after `afterId`. */
+  liveOrganizationIds(afterId: string | null, limit: number): Promise<string[]> {
+    return this.organizations.liveIds(afterId, limit);
   }
 
   /** Creates organization, owner membership and billing customer inside the caller's transaction. */
@@ -61,7 +172,7 @@ export class OrganizationsService {
       { organizationId: org.id, userId: input.userId, role: "owner" },
       tx,
     );
-    await tx.billingCustomer.create({
+    const customer = await tx.billingCustomer.create({
       data: {
         id: newId(),
         organizationId: org.id,
@@ -69,6 +180,8 @@ export class OrganizationsService {
         currency: org.defaultCurrency,
       },
     });
+    // Phase 6: a new organization starts on the free tier's entitlements.
+    await this.entitlements.writeForPlanInTx(tx, customer.id, null);
   }
 
   async listForUser(userId: string): Promise<OrganizationMembershipSummary[]> {
@@ -79,6 +192,10 @@ export class OrganizationsService {
       slug: m.organization.slug,
       country: m.organization.country,
       role: m.role,
+      deletionRequestedAt: m.organization.deletionRequestedAt?.toISOString() ?? null,
+      purgeAfter: m.organization.deletionRequestedAt
+        ? (m.organization.purgeAfter?.toISOString() ?? null)
+        : null,
     }));
   }
 
@@ -95,6 +212,8 @@ export class OrganizationsService {
       createdAt: org.createdAt.toISOString(),
       memberCount: await this.organizations.countMembers(org.id),
       role: scope.role,
+      deletionRequestedAt: org.deletionRequestedAt?.toISOString() ?? null,
+      purgeAfter: org.deletionRequestedAt ? (org.purgeAfter?.toISOString() ?? null) : null,
     };
   }
 
@@ -107,6 +226,9 @@ export class OrganizationsService {
     const before = await this.organizations.findById(scope.organizationId);
     if (!before) throw AppError.notFound("Organization");
     const after = await this.organizations.update(scope.organizationId, dto);
+    await this.redis
+      .del(OrganizationsService.dataSettingsKey(scope.organizationId))
+      .catch(() => undefined);
     await this.audit.record(
       {
         organizationId: scope.organizationId,
@@ -161,7 +283,19 @@ export class OrganizationsService {
       await this.assertNotLastOwner(scope.organizationId);
     }
 
-    const updated = await this.memberships.update(scope.organizationId, targetUserId, dto);
+    let updated;
+    if (dto.status === "active" && target.status !== "active") {
+      // Member cap (Phase 6): reactivating a suspended member takes a seat.
+      const cap = await this.entitlements.maxMembers(scope.organizationId);
+      updated = await this.prisma.$transaction(async (tx) => {
+        await this.memberships.lockOrganization(scope.organizationId, tx);
+        const active = await this.memberships.countActive(scope.organizationId, tx);
+        if (active + 1 > cap) throw memberLimitReached(cap, active);
+        return this.memberships.update(scope.organizationId, targetUserId, dto, tx);
+      });
+    } else {
+      updated = await this.memberships.update(scope.organizationId, targetUserId, dto);
+    }
     await this.invalidateMembershipCache(targetUserId, scope.organizationId);
     if (dto.role && dto.role !== target.role) {
       await this.audit.record(
@@ -225,28 +359,6 @@ export class OrganizationsService {
     );
   }
 
-  async requestDeletion(
-    scope: OrganizationScope,
-    actorUserId: string,
-    ctx: AuditContext,
-  ): Promise<{ deletionRequestedAt: string; purgeAfter: string }> {
-    const now = new Date();
-    await this.organizations.update(scope.organizationId, { deletionRequestedAt: now });
-    await this.audit.record(
-      {
-        organizationId: scope.organizationId,
-        actorUserId,
-        actorType: "user",
-        action: "org.deletion_requested",
-        resourceType: "organization",
-        resourceId: scope.organizationId,
-      },
-      ctx,
-    );
-    const purgeAfter = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-    return { deletionRequestedAt: now.toISOString(), purgeAfter: purgeAfter.toISOString() };
-  }
-
   permissionsFor(role: OrganizationRole) {
     return ROLE_PERMISSIONS[role];
   }
@@ -287,6 +399,16 @@ export class OrganizationsService {
     }
     return `${base}-${newId().slice(-8)}`;
   }
+}
+
+/** 409 ORGANIZATION_PENDING_DELETION with the purge date (`details` path `purgeAfter`). */
+export function pendingDeletionError(purgeAfter: Date | null): AppError {
+  const when = purgeAfter ? ` on ${purgeAfter.toISOString().slice(0, 10)}` : "";
+  return new AppError(
+    "ORGANIZATION_PENDING_DELETION",
+    `This organization is scheduled for deletion${when}. New discovery, website analysis, imports, purchases and invitations are paused; an owner can cancel the deletion in Settings.`,
+    purgeAfter ? [{ path: "purgeAfter", message: purgeAfter.toISOString() }] : undefined,
+  );
 }
 
 function pick(obj: Record<string, unknown>, keys: string[]): Record<string, unknown> {

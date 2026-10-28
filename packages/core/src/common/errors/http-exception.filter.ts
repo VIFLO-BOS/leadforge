@@ -1,5 +1,6 @@
 import {
   Catch,
+  Optional,
   HttpException,
   HttpStatus,
   type ArgumentsHost,
@@ -9,8 +10,11 @@ import { ThrottlerException } from "@nestjs/throttler";
 import type { Request, Response } from "express";
 import { Logger } from "nestjs-pino";
 import type { ApiErrorBody, ErrorCode } from "@leadforge/contracts";
-import { AppError } from "./app.error.js";
+import { AppError, retryAfterDetails } from "./app.error.js";
+import { ThrottledException } from "../throttling/tracked-throttler.guard.js";
 import { getRequestId } from "../request/request-context.js";
+import { redactUrl } from "../security/http-security.js";
+import { MetricsService } from "../../metrics/metrics.service.js";
 
 /**
  * Maps every thrown error to the API error envelope. Internal errors never leak
@@ -18,7 +22,10 @@ import { getRequestId } from "../request/request-context.js";
  */
 @Catch()
 export class AppExceptionFilter implements ExceptionFilter {
-  constructor(private readonly logger: Logger) {}
+  constructor(
+    private readonly logger: Logger,
+    @Optional() protected readonly metrics?: MetricsService,
+  ) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
@@ -27,14 +34,17 @@ export class AppExceptionFilter implements ExceptionFilter {
     const requestId = getRequestId(req);
 
     const { status, body } = this.translate(exception, requestId);
+    this.metrics?.countError(body.error.code, status);
 
     if (status >= 500) {
       this.logger.error(
-        { err: exception, requestId, path: req.originalUrl, method: req.method },
+        { err: exception, requestId, path: redactUrl(req.originalUrl), method: req.method },
         "Unhandled error",
       );
     } else if (status === 429) {
-      res.setHeader("Retry-After", "60");
+      // The real wait when it is known (the per-account sign-in lock, a route limit's block),
+      // otherwise a nominal minute.
+      res.setHeader("Retry-After", String(retryAfterOf(exception) ?? DEFAULT_RETRY_AFTER_SECONDS));
     }
 
     res.status(status).json(body);
@@ -56,21 +66,55 @@ export class AppExceptionFilter implements ExceptionFilter {
     }
 
     if (exception instanceof ThrottlerException) {
-      return envelope(429, "RATE_LIMITED", "Too many requests. Try again shortly", requestId);
+      const limited = envelope(
+        429,
+        "RATE_LIMITED",
+        "Too many requests. Try again shortly",
+        requestId,
+      );
+      const seconds = retryAfterOf(exception);
+      return seconds === undefined
+        ? limited
+        : {
+            status: 429,
+            body: { error: { ...limited.body.error, details: retryAfterDetails(seconds) } },
+          };
     }
 
     if (exception instanceof HttpException) {
+      // Only the framework throws these (application code throws AppError): unknown routes,
+      // body-parser and URI errors Nest re-wraps, multer limits. Their messages can echo the
+      // request (the path, a fragment of the body), so a fixed message per status is returned.
       const status = exception.getStatus();
-      const code = codeForStatus(status);
-      const response = exception.getResponse();
+      return envelope(
+        status,
+        codeForStatus(status),
+        frameworkMessage(status, exception.message),
+        requestId,
+      );
+    }
+
+    // Client errors raised before routing by the body parsers (http-errors: `expose` and a 4xx
+    // `status`): malformed JSON, a body over the size limit, an unsupported charset. Their
+    // messages can quote the body, so a fixed message per status is returned instead.
+    const clientError = exception as { expose?: unknown; status?: unknown; type?: unknown } | null;
+    if (
+      clientError &&
+      clientError.expose === true &&
+      typeof clientError.status === "number" &&
+      clientError.status >= 400 &&
+      clientError.status < 500
+    ) {
+      const status = clientError.status;
       const message =
-        status >= 500
-          ? "Something went wrong on our side"
-          : typeof response === "string"
-            ? response
-            : ((response as { message?: string | string[] }).message?.toString() ??
-              exception.message);
-      return envelope(status, code, message, requestId);
+        status === 413
+          ? "The request body is too large"
+          : status === 415
+            ? "Unsupported request encoding or charset"
+            : clientError.type === "entity.parse.failed"
+              ? "The request body is not valid JSON"
+              : "The request could not be read";
+      return envelope(status, codeForStatus(status), message, requestId);
     }
 
     return envelope(
@@ -82,8 +126,46 @@ export class AppExceptionFilter implements ExceptionFilter {
   }
 }
 
-function envelope(status: number, code: ErrorCode, message: string, requestId: string) {
+const DEFAULT_RETRY_AFTER_SECONDS = 60;
+
+/** Seconds until a 429 can be retried, when the error knows it. */
+function retryAfterOf(exception: unknown): number | undefined {
+  if (exception instanceof AppError || exception instanceof ThrottledException)
+    return exception.retryAfterSeconds;
+  return undefined;
+}
+
+function envelope(
+  status: number,
+  code: ErrorCode,
+  message: string,
+  requestId: string,
+): { status: number; body: ApiErrorBody } {
   return { status, body: { error: { code, message, requestId } } };
+}
+
+function frameworkMessage(status: number, original: string): string {
+  if (status >= 500) return "Something went wrong on our side";
+  switch (status) {
+    case 400:
+      return /JSON/i.test(original)
+        ? "The request body is not valid JSON"
+        : "The request could not be read";
+    case 401:
+      return "Sign in to continue";
+    case 403:
+      return "You do not have access to this resource";
+    case 404:
+      return "No such endpoint";
+    case 405:
+      return "Method not allowed";
+    case 413:
+      return "The request body is too large";
+    case 415:
+      return "Unsupported media type";
+    default:
+      return "The request was refused";
+  }
 }
 
 function codeForStatus(status: number): ErrorCode {
@@ -98,6 +180,10 @@ function codeForStatus(status: number): ErrorCode {
       return "NOT_FOUND";
     case 409:
       return "CONFLICT";
+    case 413:
+      return "PAYLOAD_TOO_LARGE";
+    case 415:
+      return "UNSUPPORTED_MEDIA_TYPE";
     case 429:
       return "RATE_LIMITED";
     default:

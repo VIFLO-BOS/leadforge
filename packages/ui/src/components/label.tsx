@@ -10,13 +10,20 @@ export const Label = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <LabelPrimitive.Root
     ref={ref}
-    className={cn("text-sm font-medium leading-none peer-disabled:opacity-60", className)}
+    className={cn(
+      "text-foreground text-sm font-medium leading-5 peer-disabled:opacity-60",
+      className,
+    )}
     {...props}
   />
 ));
 Label.displayName = "Label";
 
-/** Form field wrapper: label, control, help or error text wired with aria-describedby. */
+/**
+ * Top-labelled form field: label, control, supporting text or error wired with
+ * aria-describedby. Use for dense dashboard forms, Select, Combobox and anything that is not a
+ * plain text input; use TextField for text inputs that should float their label.
+ */
 export function FormField({
   id,
   label,
@@ -37,11 +44,17 @@ export function FormField({
   const describedBy = [hint ? `${id}-hint` : null, error ? `${id}-error` : null]
     .filter(Boolean)
     .join(" ");
+  // A single native control gets aria-describedby automatically; anything else wires it itself.
+  const child = React.Children.count(children) === 1 ? React.Children.toArray(children)[0] : null;
+  const control =
+    describedBy && React.isValidElement<{ "aria-describedby"?: string }>(child)
+      ? React.cloneElement(child, {
+          "aria-describedby":
+            [child.props["aria-describedby"], describedBy].filter(Boolean).join(" ") || undefined,
+        })
+      : children;
   return (
-    <div
-      className={cn("flex min-w-0 flex-col gap-1.5", className)}
-      data-field-describedby={describedBy || undefined}
-    >
+    <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
       <Label htmlFor={id}>
         {label}
         {required ? (
@@ -51,7 +64,7 @@ export function FormField({
           </span>
         ) : null}
       </Label>
-      {children}
+      {control}
       {hint ? (
         <p id={`${id}-hint`} className="text-muted-foreground text-xs">
           {hint}

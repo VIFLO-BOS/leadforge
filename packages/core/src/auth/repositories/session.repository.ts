@@ -36,6 +36,16 @@ export class SessionRepository {
     });
   }
 
+  /** Ids of the family's sessions that could still hold a live access token. */
+  async listIdsForFamily(familyId: string): Promise<string[]> {
+    const rows = await this.prisma.session.findMany({
+      where: { familyId, expiresAt: { gt: new Date() } },
+      select: { id: true },
+      take: 1000,
+    });
+    return rows.map((r) => r.id);
+  }
+
   touch(id: string): Promise<Session> {
     return this.prisma.session.update({ where: { id }, data: { lastUsedAt: new Date() } });
   }

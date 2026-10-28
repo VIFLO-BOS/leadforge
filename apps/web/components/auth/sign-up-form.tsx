@@ -8,11 +8,11 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import type { z } from "zod";
-import { Button, ErrorState, FormField, Input } from "@leadforge/ui";
+import { Button, ErrorState, TextField } from "@leadforge/ui";
 import { apiFetch, isApiError } from "@/lib/api";
 import { friendlyMessage, requestIdOf } from "@/lib/errors";
 import { setActiveOrgId } from "@/lib/org";
-import { AuthHeading } from "./auth-heading";
+import { AuthPanel } from "./auth-heading";
 
 type Values = z.input<typeof RegisterRequest>;
 
@@ -49,106 +49,87 @@ export function SignUpForm() {
   });
 
   return (
-    <>
-      <AuthHeading
-        title="Create your workspace"
-        description="Start with your organization. You can invite your team afterwards."
-      />
-      <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
-        <FormField id="su-name" label="Your name" required error={errors.name?.message}>
-          <Input
-            id="su-name"
-            autoComplete="name"
-            invalid={Boolean(errors.name)}
-            {...form.register("name")}
-          />
-        </FormField>
-        <FormField id="su-email" label="Work email" required error={errors.email?.message}>
-          <Input
-            id="su-email"
-            type="email"
-            autoComplete="email"
-            inputMode="email"
-            invalid={Boolean(errors.email)}
-            {...form.register("email")}
-          />
-        </FormField>
-        <FormField
+    <AuthPanel
+      title="Create your workspace"
+      description="Start with your organization. You can invite your team afterwards."
+    >
+      <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
+        <TextField
+          id="su-name"
+          label="Your name"
+          required
+          autoComplete="name"
+          error={errors.name?.message}
+          {...form.register("name")}
+        />
+        <TextField
+          id="su-email"
+          label="Work email"
+          type="email"
+          required
+          autoComplete="email"
+          inputMode="email"
+          error={errors.email?.message}
+          {...form.register("email")}
+        />
+        <TextField
           id="su-password"
           label="Password"
+          type="password"
           required
+          revealable
+          autoComplete="new-password"
           hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
           error={errors.password?.message}
-        >
-          <Input
-            id="su-password"
-            type="password"
-            autoComplete="new-password"
-            invalid={Boolean(errors.password)}
-            {...form.register("password")}
-          />
-        </FormField>
-        <FormField
-          id="su-org"
-          label="Organization name"
-          required
-          error={errors.organizationName?.message}
-        >
-          <Input
+          {...form.register("password")}
+        />
+        <div className="grid grid-cols-1 gap-5 min-[480px]:grid-cols-[minmax(0,1fr)_7.5rem]">
+          <TextField
             id="su-org"
+            label="Organization name"
+            required
             autoComplete="organization"
-            invalid={Boolean(errors.organizationName)}
+            error={errors.organizationName?.message}
             {...form.register("organizationName")}
           />
-        </FormField>
-        <FormField
-          id="su-country"
-          label="Country"
-          required
-          hint="Two-letter code, for example NG."
-          error={errors.country?.message}
-        >
-          <Input
+          <TextField
             id="su-country"
+            label="Country"
+            required
             maxLength={2}
             autoComplete="country"
             className="uppercase"
-            invalid={Boolean(errors.country)}
+            hint="For example NG"
+            error={errors.country?.message}
             {...form.register("country")}
           />
-        </FormField>
+        </div>
 
         {error ? (
           <ErrorState title="Sign-up failed" message={error.message} requestId={error.requestId} />
         ) : null}
 
-        <Button type="submit" size="lg" className="w-full" loading={form.formState.isSubmitting}>
-          Create account
-        </Button>
-        <p className="text-muted-foreground text-center text-xs">
+        <p className="text-muted-foreground text-xs leading-5">
           By continuing you agree to the{" "}
-          <Link href="/legal/terms" className="hover:text-foreground underline underline-offset-4">
+          <Link href="/legal/terms" className="text-primary underline underline-offset-4">
             Terms
           </Link>{" "}
           and{" "}
-          <Link
-            href="/legal/privacy"
-            className="hover:text-foreground underline underline-offset-4"
-          >
+          <Link href="/legal/privacy" className="text-primary underline underline-offset-4">
             Privacy Policy
           </Link>
           .
         </p>
+
+        <div className="mt-2 flex flex-col-reverse gap-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
+          <Button asChild variant="text" className="-ml-3 self-start min-[360px]:self-auto">
+            <Link href="/sign-in">Sign in instead</Link>
+          </Button>
+          <Button type="submit" loading={form.formState.isSubmitting}>
+            Create account
+          </Button>
+        </div>
       </form>
-      <p className="text-muted-foreground mt-6 text-center text-sm">
-        Already have an account?{" "}
-        <Link
-          href="/sign-in"
-          className="text-primary font-medium underline-offset-4 hover:underline"
-        >
-          Sign in
-        </Link>
-      </p>
-    </>
+    </AuthPanel>
   );
 }

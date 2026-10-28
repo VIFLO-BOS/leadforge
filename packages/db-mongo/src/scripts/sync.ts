@@ -11,7 +11,7 @@ async function main(): Promise<void> {
   try {
     const result = await syncCollections(client.db(dbName));
     process.stdout.write(
-      `Mongo sync complete. created=${result.created.length} updated=${result.updated.length} indexes=${result.indexesEnsured}\n`,
+      `Mongo sync complete. created=${result.created.length} updated=${result.updated.length} indexes=${result.indexesEnsured} dropped=${result.indexesDropped.join(",") || "none"}\n`,
     );
   } finally {
     await client.close();

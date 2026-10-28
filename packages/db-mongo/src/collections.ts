@@ -15,11 +15,24 @@ export const Collections = {
   leads: "leads",
   pipelineConfigs: "pipeline_configs",
   leadActivities: "lead_activities",
+  /** Phase 5: one outreach record per business and channel. */
+  outreachRecords: "outreach_records",
+  /** Phase 5: bulk operations and their per-business results. */
+  bulkOperations: "bulk_operations",
+  bulkOperationItems: "bulk_operation_items",
   exportJobs: "export_jobs",
+  /** Stage 10: whole-organization data exports (owner only), built by the worker. */
+  organizationDataExports: "organization_data_exports",
+  importJobs: "import_jobs",
+  importRows: "import_rows",
   suppressionEntries: "suppression_entries",
   sourceConfigs: "source_configs",
   notifications: "notifications",
   auditEvents: "audit_events",
+  /** Platform-level reference data (not organization-scoped): Overture Maps Places staging catalogue. */
+  overturePlaces: "overture_places",
+  /** Platform-level: one record per Overture sync attempt. */
+  overtureSyncRuns: "overture_sync_runs",
 } as const;
 
 export type CollectionName = (typeof Collections)[keyof typeof Collections];

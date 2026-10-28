@@ -47,12 +47,39 @@ export class MembershipRepository {
     });
   }
 
+  /** Stage 10: active owners and admins of an organization with their user rows (deletion notices). */
+  managers(organizationId: string): Promise<MembershipWithUser[]> {
+    return this.prisma.membership.findMany({
+      where: {
+        organizationId,
+        status: "active",
+        role: { in: ["owner", "admin"] },
+        user: { deletedAt: null },
+      },
+      include: { user: true },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
   countByRole(
     organizationId: string,
     role: OrganizationRole,
     tx: Prisma.TransactionClient = this.prisma,
   ): Promise<number> {
     return tx.membership.count({ where: { organizationId, role, status: "active" } });
+  }
+
+  /** Active members (member cap, Phase 6). */
+  countActive(organizationId: string, tx: Prisma.TransactionClient = this.prisma): Promise<number> {
+    return tx.membership.count({ where: { organizationId, status: "active" } });
+  }
+
+  /**
+   * Serializes member-cap decisions for one organization: locks its row (SELECT ... FOR UPDATE)
+   * inside the caller's transaction, so two concurrent acceptances cannot both take the last seat.
+   */
+  async lockOrganization(organizationId: string, tx: Prisma.TransactionClient): Promise<void> {
+    await tx.$queryRaw`SELECT id FROM organizations WHERE id = ${organizationId}::uuid FOR UPDATE`;
   }
 
   create(

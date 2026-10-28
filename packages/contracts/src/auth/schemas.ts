@@ -62,6 +62,10 @@ export const OrganizationMembershipSummary = z.object({
   slug: z.string(),
   country: z.string(),
   role: OrganizationRole,
+  /** Stage 10: set while the organization is scheduled for deletion (every member sees a banner). */
+  deletionRequestedAt: IsoDateTime.nullable(),
+  /** Stage 10: when the purge may start (deletionRequestedAt plus the 14-day grace); null when none is pending. */
+  purgeAfter: IsoDateTime.nullable(),
 });
 export type OrganizationMembershipSummary = z.infer<typeof OrganizationMembershipSummary>;
 

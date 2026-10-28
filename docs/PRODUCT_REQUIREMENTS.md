@@ -1,6 +1,6 @@
 # LeadForge Product Requirements
 
-Status: Phase 0 proposal, pending approval. Last updated 2026-10-24.
+Status: approved at Gate 0; sections 8 and 9 updated to what shipped in Phase 7 (2026-10-27).
 
 ## 1. Product statement
 
@@ -125,34 +125,38 @@ Score = sum of weight times signal (each signal 0 to 1). Shown with a breakdown 
 
 Two separate numbers are shown: **Data confidence** (quality of the record) and **Fit score** (commercial match). They are never blended into one.
 
-## 8. Credits and plans (to be approved)
+## 8. Credits and plans (as built; prices pending approval)
 
-Charging events:
+Charging events, as implemented in Phases 3 to 6:
 
-| Event                                 | Charge                                                                         | When                                                                       |
-| ------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| Discovery job                         | 1 credit per produced business record (new, or existing with new observations) | Hold `maxRecords` at queue; capture actual at completion; release the rest |
-| Website analysis                      | 1 credit per analysis                                                          | Hold at queue; capture on completion; release on failure                   |
-| Email verification (release 1 checks) | 0                                                                              | Included                                                                   |
-| CSV import                            | 0                                                                              | Included                                                                   |
-| Export                                | 0                                                                              | Included, rows capped per plan                                             |
+| Event                                            | Charge                                                                                                                                                                                                    | When                                                                                                                                                                                      |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Discovery job                                    | 1 credit per billable record: a new business, or an existing one that gains new observations. A place already linked to a business in the directory is skipped and never charged (`ALREADY_IN_DIRECTORY`) | Hold at creation for min(`maxRecords`, places the source can return; the Overture estimate is an exact count); capture the actual count when the job finishes; release the rest           |
+| Website analysis                                 | 1 credit per analysis                                                                                                                                                                                     | Hold at request; capture when it completes, including when the site is unreachable (that is a finding); release when robots.txt disallows, the address is denied, or it fails on our side |
+| Website contacts, email checks, refresh contacts | 0 (capped at 600 runs per hour per organization)                                                                                                                                                          | Included                                                                                                                                                                                  |
+| CSV import                                       | 0                                                                                                                                                                                                         | Included (50,000 rows per file)                                                                                                                                                           |
+| Export                                           | 0                                                                                                                                                                                                         | Synchronous CSV up to 1,000 rows; async ZIP up to the `export_row_cap` entitlement                                                                                                        |
 
-Failed or cancelled jobs: credits are captured only for items that completed successfully before failure or cancellation. Items that fail because of our error (not source refusal) are not billed.
+Failed or cancelled jobs: credits are captured only for records produced before the failure or cancellation. Reconciliation (every 10 minutes) settles any hold a crash left open. A refund takes back the purchased credits in proportion; the balance may go negative, which pauses discovery and analysis (`CREDIT_BALANCE_NEGATIVE`) until it is topped up.
 
-Plans are seeded from configuration and displayed from the backend. Seeded prices are placeholders flagged `is_placeholder = true`, and the pricing page shows a "Pricing not yet published" notice while that flag is set. No invented numbers are shown as final.
+Plans and credit packs come from a catalogue (`packages/core/src/billing/catalogue.ts`, or a JSON file through `BILLING_CATALOGUE_PATH` and `pnpm billing:catalogue`). The built-in catalogue has three monthly plans (Starter: 200 credits, 2 members, 1,000 export rows; Growth: 2,000 credits, 10 members, 25,000 rows; Scale: 10,000 credits, 50 members, 250,000 rows) and three credit packs (500, 2,000 and 10,000 credits). **Every built-in price is 0 and flagged `is_placeholder`**: the pricing page and the Billing page show "Pricing not yet published", and a live Paystack key refuses to sell a placeholder or zero price (`PRICE_NOT_PUBLISHED`). The plan sizes above are placeholders too, pending the owner's decision.
+
+**Free tier (assumption pending the owner's decision).** An organization without a subscription gets: 5 members (`BILLING_FREE_MAX_MEMBERS`), an async export cap of 10,000 rows (`EXPORT_DEFAULT_ROW_CAP`), discovery and website analysis enabled, and no included credits (credits come from packs or plans). These are defaults chosen so the product works before pricing exists, not an approved offer. The development seed gives its organization overrides (25 members) and a 1,000-credit development grant labeled as such.
 
 ## 9. Page inventory
 
+Actual routes as of 2026-10-27 (web lane; `apps/web/app`). Routes marked "in progress" are being built in the current stage and their APIs are complete.
+
 ### Marketing `(marketing)`
 
-| Route                                                                               | Purpose                                                                                                                                                              | Data                                          |
-| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `/`                                                                                 | Home: hero, interface preview, discovery, enrichment and qualification sections, workflow, sources, security and provenance, pricing preview, FAQ, final CTA, footer | Plans from API; no fabricated metrics         |
-| `/product`                                                                          | Feature deep-dive                                                                                                                                                    | static                                        |
-| `/pricing`                                                                          | Plans and credit packs                                                                                                                                               | Plans from API                                |
-| `/about`                                                                            | Mission, Nigeria focus, expansion                                                                                                                                    | static                                        |
-| `/contact`                                                                          | Contact form                                                                                                                                                         | POST `/api/v1/public/contact` with rate limit |
-| `/legal/privacy`, `/legal/terms`, `/legal/acceptable-use`, `/legal/data-collection` | Legal                                                                                                                                                                | static                                        |
+| Route                                                                                                      | Purpose                                                                                                                               | Data                                                                 |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `/`                                                                                                        | Home: hero, discovery, enrichment and qualification, workflow, sources, security and provenance, pricing preview, FAQ, call to action | Plans from `GET /public/plans`; no fabricated metrics                |
+| `/product`                                                                                                 | Feature deep-dive                                                                                                                     | static                                                               |
+| `/pricing`                                                                                                 | Plans and credit packs                                                                                                                | `GET /public/plans` ("Pricing not yet published" while placeholders) |
+| `/about`                                                                                                   | Mission, Nigeria focus, expansion                                                                                                     | static                                                               |
+| `/contact`                                                                                                 | Contact form                                                                                                                          | `POST /api/v1/public/contact` (3 per hour per address)               |
+| `/legal/privacy`, `/legal/terms`, `/legal/acceptable-use`, `/legal/data-collection`, `/legal/data-sources` | Legal; data sources shows the Overture licences and attribution                                                                       | static, plus `GET /public/data-licenses`                             |
 
 ### Auth `(auth)`
 
@@ -160,25 +164,27 @@ Plans are seeded from configuration and displayed from the backend. Seeded price
 
 ### Dashboard `(app)` under `/app`
 
-| Group      | Route                                                                  | Status in release 1                   |
-| ---------- | ---------------------------------------------------------------------- | ------------------------------------- |
-| Workspace  | `/app` Overview                                                        | Implemented                           |
-|            | `/app/businesses` Directory                                            | Implemented                           |
-|            | `/app/businesses/[id]` Detail                                          | Implemented                           |
-|            | `/app/discovery`, `/app/discovery/new`, `/app/discovery/[id]`          | Implemented                           |
-|            | `/app/lists`, `/app/lists/[id]`                                        | Implemented                           |
-|            | `/app/analysis` Website analyses                                       | Implemented                           |
-|            | `/app/reports`                                                         | Implemented                           |
-| Sales      | `/app/pipeline`                                                        | Implemented                           |
-|            | `/app/activities`                                                      | Implemented                           |
-|            | `/app/outreach`                                                        | Implemented                           |
-| Automation | `/app/jobs` All background jobs (discovery, analysis, export)          | Implemented                           |
-|            | `/app/jobs/scheduled`                                                  | Disabled, "Coming soon"               |
-|            | `/app/sources` Source registry, coverage, policy                       | Implemented (read, enable or disable) |
-| Account    | `/app/usage`                                                           | Implemented                           |
-|            | `/app/billing`                                                         | Implemented                           |
-|            | `/app/team`                                                            | Implemented                           |
-|            | `/app/settings` (profile, organization, notifications, security, data) | Implemented; API keys tab disabled    |
+| Group      | Route                                                                            | Status                                      |
+| ---------- | -------------------------------------------------------------------------------- | ------------------------------------------- |
+| Workspace  | `/app` Overview                                                                  | Implemented                                 |
+|            | `/app/businesses` Directory; `/app/businesses/[id]` Detail                       | Implemented                                 |
+|            | `/app/businesses/import` CSV import                                              | Implemented                                 |
+|            | `/app/businesses/duplicates`, `/app/businesses/duplicates/[id]` Duplicate review | Implemented                                 |
+|            | `/app/discovery`, `/app/discovery/new`, `/app/discovery/[id]`                    | Implemented                                 |
+|            | `/app/analysis`, `/app/analysis/[id]` Website analyses                           | Implemented                                 |
+|            | `/app/lists`, `/app/lists/[id]`                                                  | Implemented                                 |
+|            | `/app/reports`                                                                   | Implemented                                 |
+| Sales      | `/app/pipeline` (also `?assignedToUserId=`)                                      | Implemented                                 |
+|            | `/app/activities`, `/app/outreach`                                               | Implemented                                 |
+| Automation | `/app/jobs` All background jobs; `/app/jobs/exports/[id]`, `/app/jobs/bulk/[id]` | Implemented                                 |
+|            | `/app/sources` Source registry, coverage, policy, enable or disable              | Implemented                                 |
+|            | Scheduled jobs                                                                   | Not built; not linked                       |
+| Account    | `/app/usage`                                                                     | Implemented                                 |
+|            | `/app/billing`, `/app/billing/return`                                            | In progress (Phase 6 screens; API complete) |
+|            | `/app/team`                                                                      | Implemented                                 |
+|            | `/app/settings` (profile, organization, notifications, security, data)           | Implemented; API keys not offered           |
+
+`/app/design-gallery` (`/app/_design`) is a development-only component gallery.
 
 ## 10. Acceptance criteria (release 1)
 

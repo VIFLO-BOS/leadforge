@@ -24,6 +24,23 @@ export class InvitationRepository {
     });
   }
 
+  /** Live (unexpired, unanswered) invitations, optionally ignoring one address (member cap, Phase 6). */
+  countLive(
+    organizationId: string,
+    tx: Prisma.TransactionClient = this.prisma,
+    exceptEmail?: string,
+  ): Promise<number> {
+    return tx.invitation.count({
+      where: {
+        organizationId,
+        acceptedAt: null,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+        ...(exceptEmail ? { NOT: { email: { equals: exceptEmail, mode: "insensitive" } } } : {}),
+      },
+    });
+  }
+
   findPendingById(organizationId: string, id: string): Promise<Invitation | null> {
     return this.prisma.invitation.findFirst({
       where: { id, organizationId, acceptedAt: null, revokedAt: null },

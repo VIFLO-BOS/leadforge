@@ -27,7 +27,9 @@ export function useActiveOrg(me: MeResponse | undefined): {
   setOrg: (id: string) => void;
 } {
   const queryClient = useQueryClient();
-  const [stored, setStored] = useState<string | null>(null);
+  // Read storage on the first client render so the stored choice wins over the first membership
+  // (the shell only renders org-scoped content after /auth/me resolves, so SSR output is unaffected).
+  const [stored, setStored] = useState<string | null>(() => getActiveOrgId());
 
   useEffect(() => {
     setStored(getActiveOrgId());

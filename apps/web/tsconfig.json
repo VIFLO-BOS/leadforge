@@ -10,10 +10,24 @@
     "incremental": true,
     "declaration": false,
     "declarationMap": false,
-    "plugins": [{ "name": "next" }],
-    "paths": { "@/*": ["./*"] },
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./*"]
+    },
     "types": ["node", "react", "react-dom", "@testing-library/jest-dom"]
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", ".next", "playwright-report", "test-results"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".next-e2e-live/types/**/*.ts",
+    ".next-e2e/types/**/*.ts",
+    ".next/types/**/*.ts",
+    "next-env.d.ts",
+    ".next-e2e-release/types/**/*.ts"
+  ],
+  "exclude": ["node_modules", ".next", ".next-*", "playwright-report", "test-results"]
 }

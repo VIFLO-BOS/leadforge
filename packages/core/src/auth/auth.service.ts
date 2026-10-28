@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
 import { Logger } from "nestjs-pino";
 import {
@@ -17,6 +18,7 @@ import { OrganizationsService } from "../organizations/organizations.service.js"
 import { PasswordService } from "./password.service.js";
 import { TokenService } from "./token.service.js";
 import { CsrfService } from "./csrf.service.js";
+import { SessionSecurityService } from "./session-security.service.js";
 import { UserRepository } from "./repositories/user.repository.js";
 import { SessionRepository } from "./repositories/session.repository.js";
 import { EmailTokenRepository } from "./repositories/email-token.repository.js";
@@ -52,7 +54,11 @@ export class AuthService {
     private readonly audit: AuditService,
     private readonly queue: QueueService,
     private readonly logger: Logger,
+    private readonly sessionSecurity: SessionSecurityService,
   ) {}
+
+  /** Hash checked when the email is unknown, so a miss costs the same Argon2 time as a wrong password. */
+  private dummyHash: Promise<string> | null = null;
 
   async register(
     dto: RegisterRequest,
@@ -99,9 +105,27 @@ export class AuthService {
     dto: LoginRequest,
     ctx: ClientContext,
   ): Promise<{ me: MeResponse; tokens: IssuedTokens }> {
+    // Per-account limit on top of the per-IP route limit: rotating source addresses does not
+    // buy more guesses against one account. The wait is the time left on the lock (Retry-After
+    // and the retryAfterSeconds detail); unknown emails are counted and answered the same way.
+    const lockedFor = await this.sessionSecurity.loginLockSeconds(dto.email);
+    if (lockedFor > 0) {
+      const minutes = Math.ceil(lockedFor / 60);
+      throw AppError.rateLimited(
+        `Too many failed sign-in attempts for this account. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+        lockedFor,
+      );
+    }
     const user = await this.users.findByEmail(dto.email);
-    const ok = user ? await this.passwords.verify(user.passwordHash, dto.password) : false;
+    // Unknown emails still run one Argon2 verification so response time does not reveal which
+    // addresses have accounts.
+    this.dummyHash ??= this.passwords.hash(randomBytes(16).toString("hex"));
+    const ok = await this.passwords.verify(
+      user ? user.passwordHash : await this.dummyHash,
+      dto.password,
+    );
     if (!user || !ok) {
+      await this.sessionSecurity.recordLoginFailure(dto.email);
       await this.audit.record(
         {
           organizationId: null,
@@ -115,6 +139,7 @@ export class AuthService {
       );
       throw new AppError("INVALID_CREDENTIALS");
     }
+    await this.sessionSecurity.clearLoginFailures(dto.email);
     const tokens = await this.issueSession(user, ctx);
     await this.audit.record(
       {
@@ -132,6 +157,7 @@ export class AuthService {
 
   async logout(sessionId: string, userId: string, ctx: ClientContext): Promise<void> {
     await this.sessions.revoke(sessionId);
+    await this.sessionSecurity.markRevoked([sessionId]);
     await this.audit.record(
       {
         organizationId: null,
@@ -157,7 +183,9 @@ export class AuthService {
     if (!session) throw new AppError("UNAUTHENTICATED");
 
     if (session.revokedAt) {
+      const family = await this.sessions.listIdsForFamily(session.familyId);
       await this.sessions.revokeFamily(session.familyId);
+      await this.sessionSecurity.markRevoked(family);
       await this.audit.record(
         {
           organizationId: null,
@@ -293,12 +321,16 @@ export class AuthService {
     if (weakness) throw AppError.validation([{ path: "password", message: weakness }]);
 
     const passwordHash = await this.passwords.hash(password);
+    const openSessions = (await this.sessions.listActiveForUser(user.id)).map((s) => s.id);
     await this.prisma.$transaction(async (tx) => {
       await this.emailTokens.consume(record.id, tx);
       await this.users.updatePassword(user.id, passwordHash, tx);
       await this.sessions.revokeAllForUser(user.id, undefined, tx);
       if (!user.emailVerifiedAt) await this.users.markEmailVerified(user.id, tx); // proven mailbox control
     });
+    // Access tokens of every signed-in device stop working now, not when they expire.
+    await this.sessionSecurity.markRevoked(openSessions);
+    await this.sessionSecurity.clearLoginFailures(user.email);
     await this.audit.record(
       {
         organizationId: null,
@@ -325,6 +357,7 @@ export class AuthService {
     const session = await this.sessions.findActiveById(sessionId);
     if (!session || session.userId !== userId) throw AppError.notFound("Session");
     await this.sessions.revoke(sessionId);
+    await this.sessionSecurity.markRevoked([sessionId]);
     await this.audit.record(
       {
         organizationId: null,

@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput & node --watch -r dotenv/config dist/main.js",
-    "start": "node -r dotenv/config dist/main.js",
+    "dev": "concurrently -k -n tsc,api -c blue,green \"tsc -p tsconfig.json --watch --preserveWatchOutput\" \"node --watch -r dotenv/config dist/main.js dotenv_config_path=../../.env\"",
+    "start": "node -r dotenv/config dist/main.js dotenv_config_path=../../.env",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test",
     "test": "vitest run",
@@ -24,7 +24,6 @@
     "@nestjs/throttler": "^6.4.0",
     "@prisma/client": "^6.0.0",
     "argon2": "^0.44.0",
-    "uuid": "^11.0.0",
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.0",
     "express": "^5.0.0",
@@ -32,19 +31,23 @@
     "pino-pretty": "^13.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.0",
+    "uuid": "^11.0.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@leadforge/config": "workspace:*",
+    "@swc/core": "^1.16.20",
     "@types/cookie-parser": "^1.4.8",
     "@types/express": "^5.0.0",
     "@types/node": "^24.0.0",
     "@types/supertest": "^6.0.0",
     "bullmq": "^5.50.0",
+    "concurrently": "^9.2.5",
+    "eslint": "^9.0.0",
     "ioredis": "^5.6.0",
     "supertest": "^7.0.0",
     "typescript": "^5.6.0",
-    "vitest": "^3.0.0",
-    "eslint": "^9.0.0"
+    "unplugin-swc": "^2.0.0",
+    "vitest": "^3.0.0"
   }
 }

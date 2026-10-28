@@ -10,10 +10,11 @@ import { QueueModule } from "./queue/queue.module.js";
 import { AuditModule } from "./audit/audit.module.js";
 import { MailModule } from "./mail/mail.module.js";
 import { HealthModule } from "./health/health.module.js";
+import { StorageModule } from "./storage/storage.module.js";
 
 /**
  * Infrastructure shared by the API and the worker: env, logging, databases, Redis,
- * queues, audit, mail, health. Feature modules are imported by each app on top.
+ * queues, audit, mail, health, object storage. Feature modules are imported by each app on top.
  */
 @Module({})
 export class CoreModule {
@@ -34,6 +35,7 @@ export class CoreModule {
         AuditModule,
         MailModule,
         HealthModule,
+        StorageModule,
       ],
       exports: [
         EnvModule,
@@ -44,6 +46,7 @@ export class CoreModule {
         AuditModule,
         MailModule,
         HealthModule,
+        StorageModule,
       ],
     };
   }

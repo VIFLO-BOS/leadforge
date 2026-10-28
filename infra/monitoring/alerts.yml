@@ -1,0 +1,155 @@
+# Prometheus alert rules for LeadForge (docs/OPERATIONS.md, "Monitoring", and the runbooks it links).
+# Series come from the API's GET /metrics (service="api": HTTP, queue depth, billing, credits,
+# reconciliation, Overture) and the worker's metrics server (service="worker": job outcomes).
+# Thresholds are starting points for release 1; tune them on real traffic.
+groups:
+  - name: leadforge-api
+    rules:
+      - alert: LeadForgeTargetDown
+        expr: up{job=~"leadforge-(api|worker)"} == 0
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.job }} on {{ $labels.instance }} is not answering scrapes"
+          runbook: docs/OPERATIONS.md#incident-response-basics
+      - alert: LeadForgeApiErrorRateHigh
+        expr: |
+          sum(rate(leadforge_http_requests_total{service="api",status=~"5.."}[5m]))
+            / clamp_min(sum(rate(leadforge_http_requests_total{service="api"}[5m])), 1e-9) > 0.02
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "More than 2% of API requests fail with 5xx"
+          runbook: docs/OPERATIONS.md#incident-response-basics
+      - alert: LeadForgeDirectoryLatencyP95High
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(leadforge_http_request_duration_seconds_bucket{service="api",method="GET",route="/api/v1/businesses"}[10m]))) > 0.3
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Directory list p95 above the 300 ms target (ARCHITECTURE.md section 10)"
+          runbook: docs/OPERATIONS.md#slow-directory
+      - alert: LeadForgeApiLatencyP95High
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(leadforge_http_request_duration_seconds_bucket{service="api",route!="unmatched"}[10m]))) > 1
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "API p95 above 1 s across all routes"
+          runbook: docs/OPERATIONS.md#slow-directory
+
+  - name: leadforge-queues
+    rules:
+      - alert: LeadForgeQueueBacklog
+        expr: max by (queue) (leadforge_queue_jobs{state=~"waiting|prioritized"}) > 500
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Queue {{ $labels.queue }} has {{ $value }} jobs waiting for 15 minutes"
+          runbook: docs/OPERATIONS.md#failed-jobs-and-the-dead-letter-set
+      - alert: LeadForgeQueueStalled
+        expr: |
+          (max by (queue) (leadforge_queue_jobs{state="waiting"}) > 0)
+            unless on (queue) (sum by (queue) (rate(leadforge_jobs_total[15m])) > 0)
+        for: 15m
+        labels: { severity: page }
+        annotations:
+          summary: "Queue {{ $labels.queue }} has waiting jobs and no worker progress for 15 minutes (worker down, or WORKER_QUEUES leaves it out)"
+          runbook: docs/OPERATIONS.md#failed-jobs-and-the-dead-letter-set
+      - alert: LeadForgeFailedJobsGrowing
+        expr: sum by (queue) (increase(leadforge_jobs_total{outcome="failed"}[1h])) > 5
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $value }} jobs on {{ $labels.queue }} failed for good in the last hour"
+          runbook: docs/OPERATIONS.md#failed-jobs-and-the-dead-letter-set
+      - alert: LeadForgeFailedSetLarge
+        expr: max by (queue) (leadforge_queue_jobs{state="failed"}) > 100
+        for: 1h
+        labels: { severity: ticket }
+        annotations:
+          summary: "The failed set (dead letters) of {{ $labels.queue }} holds {{ $value }} jobs"
+          runbook: docs/OPERATIONS.md#failed-jobs-and-the-dead-letter-set
+
+  - name: leadforge-billing
+    rules:
+      - alert: LeadForgeStuckPayments
+        expr: max(leadforge_billing_payments_stuck) > 0
+        for: 30m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $value }} payments pending for over an hour; reconciliation has not settled them"
+          runbook: docs/OPERATIONS.md#stuck-payments
+      - alert: LeadForgePaymentFlagged
+        expr: max(leadforge_billing_payments_flagged) > 0
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $value }} payments flagged (verification mismatch or dispute); nothing is granted until reviewed"
+          runbook: docs/OPERATIONS.md#stuck-payments
+      - alert: LeadForgeWebhookBacklog
+        expr: max(leadforge_billing_webhook_events_stale) > 0
+        for: 15m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $value }} Paystack webhook events unprocessed for over 30 minutes"
+          runbook: docs/OPERATIONS.md#webhook-replay
+      - alert: LeadForgeWebhookFailures
+        expr: max(leadforge_billing_webhook_events{status="failed"}) > 0
+        for: 30m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Paystack webhook events in failed state"
+          runbook: docs/OPERATIONS.md#webhook-replay
+      - alert: LeadForgeNegativeBalances
+        expr: max(leadforge_credits_negative_balances) > 0
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $value }} organizations have a negative credit balance (refund or reversal); their discovery and analysis are paused"
+          runbook: docs/OPERATIONS.md#credit-reconciliation
+
+  - name: leadforge-reconciliation
+    rules:
+      - alert: LeadForgeUnreconciledJobs
+        expr: max by (kind) (leadforge_jobs_unsettled) > 0
+        for: 30m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $value }} finished {{ $labels.kind }} jobs still hold credits after 30 minutes"
+          runbook: docs/OPERATIONS.md#credit-reconciliation
+      - alert: LeadForgeReconciliationNotRunning
+        expr: time() - max by (kind) (leadforge_reconciliation_last_run_timestamp_seconds) > 1800
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Reconciliation {{ $labels.kind }} has not finished a pass for 30 minutes (it runs every 10)"
+          runbook: docs/OPERATIONS.md#credit-reconciliation
+      - alert: LeadForgeReconciliationErrors
+        expr: sum by (kind, outcome) (increase(leadforge_reconciliation_runs_total{outcome=~"errors|failed"}[1h])) > 0
+        labels: { severity: ticket }
+        annotations:
+          summary: "Reconciliation {{ $labels.kind }} reported {{ $labels.outcome }} in the last hour"
+          runbook: docs/OPERATIONS.md#credit-reconciliation
+
+  - name: leadforge-organization-lifecycle
+    rules:
+      - alert: LeadForgeOrganizationPurgeFailing
+        expr: sum(increase(leadforge_jobs_total{queue="maintenance",name="purge-organization",outcome=~"failed|retrying"}[1h])) > 0
+        labels: { severity: ticket }
+        annotations:
+          summary: "An organization purge failed in the last hour; it resumes on the next scan (every 10 minutes) but needs a look"
+          runbook: docs/OPERATIONS.md#organization-deletion
+
+  - name: leadforge-overture
+    rules:
+      - alert: LeadForgeOvertureSyncFailed
+        expr: max(leadforge_overture_sync_last_run_failed) == 1
+        labels: { severity: ticket }
+        annotations:
+          summary: "The latest Overture sync run failed (the previous release stays in use)"
+          runbook: docs/OPERATIONS.md#overture-sync
+      - alert: LeadForgeOvertureSyncStale
+        expr: time() - max(leadforge_overture_sync_last_success_timestamp_seconds) > 40 * 86400
+        labels: { severity: ticket }
+        annotations:
+          summary: "No successful Overture sync for 40 days (releases are monthly and stay online about 60 days)"
+          runbook: docs/OPERATIONS.md#overture-sync

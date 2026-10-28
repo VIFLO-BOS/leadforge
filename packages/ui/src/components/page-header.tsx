@@ -6,6 +6,8 @@ export interface PageHeaderProps extends Omit<React.HTMLAttributes<HTMLDivElemen
   description?: React.ReactNode;
   actions?: React.ReactNode;
   breadcrumbs?: React.ReactNode;
+  /** Small line above the title (section name, status). */
+  eyebrow?: React.ReactNode;
   as?: "h1" | "h2";
 }
 
@@ -15,6 +17,7 @@ export function PageHeader({
   description,
   actions,
   breadcrumbs,
+  eyebrow,
   as = "h1",
   className,
   ...props
@@ -23,12 +26,20 @@ export function PageHeader({
   return (
     <div className={cn("flex min-w-0 flex-col gap-3", className)} {...props}>
       {breadcrumbs}
-      <div className="flex min-w-0 flex-col gap-3 min-[480px]:flex-row min-[480px]:items-start min-[480px]:justify-between">
-        <div className="min-w-0 flex-1">
-          <Heading className="break-anywhere text-xl font-semibold leading-tight sm:text-2xl">
+      <div className="flex min-w-0 flex-col gap-4 min-[480px]:flex-row min-[480px]:items-end min-[480px]:justify-between">
+        {/* The title keeps at least 10rem beside the actions, so many actions (or 200% zoom at
+            1280, a 640px viewport) wrap the buttons instead of squeezing the h1 to one letter
+            per line (WCAG 1.4.10 reflow). */}
+        <div className="flex min-w-[min(100%,10rem)] flex-1 flex-col gap-1">
+          {eyebrow ? (
+            <div className="text-muted-foreground text-xs font-medium">{eyebrow}</div>
+          ) : null}
+          <Heading className="break-anywhere text-xl font-normal leading-7 tracking-[-0.01em] sm:text-2xl sm:leading-8">
             {title}
           </Heading>
-          {description ? <p className="text-muted-foreground mt-1 text-sm">{description}</p> : null}
+          {description ? (
+            <p className="text-muted-foreground max-w-3xl text-sm leading-5">{description}</p>
+          ) : null}
         </div>
         {actions ? (
           <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div>

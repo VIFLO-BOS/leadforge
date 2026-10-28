@@ -1,4 +1,5 @@
-import { ChevronDown } from "lucide-react";
+import { Plus } from "lucide-react";
+import { cn } from "@leadforge/ui";
 
 export const FAQ_ITEMS = [
   {
@@ -27,19 +28,30 @@ export const FAQ_ITEMS = [
   },
 ];
 
-export function Faq() {
+/** Native disclosure list: works without JS, keyboard and screen-reader friendly. */
+export function Faq({
+  items = FAQ_ITEMS,
+  className,
+}: {
+  items?: typeof FAQ_ITEMS;
+  className?: string;
+}) {
   return (
-    <div className="divide-border border-border bg-surface mx-auto max-w-3xl divide-y rounded-lg border">
-      {FAQ_ITEMS.map((item) => (
-        <details key={item.q} className="group">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 text-left text-sm font-medium [&::-webkit-details-marker]:hidden">
-            <span className="break-anywhere">{item.q}</span>
-            <ChevronDown
-              aria-hidden
-              className="text-muted-foreground size-4 shrink-0 transition-transform group-open:rotate-180"
-            />
+    <div className={cn("border-border mx-auto max-w-4xl border-t", className)}>
+      {items.map((item) => (
+        <details key={item.q} className="border-border group border-b">
+          <summary className="state-layer transition-ui -mx-3 flex cursor-pointer list-none items-center justify-between gap-4 rounded-2xl px-3 py-5 text-left sm:py-6 [&::-webkit-details-marker]:hidden">
+            <span className="break-anywhere text-base font-normal leading-snug">{item.q}</span>
+            <span className="bg-surface-container-high text-foreground flex size-10 shrink-0 items-center justify-center rounded-full">
+              <Plus
+                aria-hidden
+                className="ease-emphasized size-5 transition-transform duration-300 group-open:rotate-45 motion-reduce:transition-none"
+              />
+            </span>
           </summary>
-          <p className="text-muted-foreground px-4 pb-4 text-sm">{item.a}</p>
+          <p className="text-muted-foreground max-w-3xl pb-6 pr-12 text-sm leading-relaxed">
+            {item.a}
+          </p>
         </details>
       ))}
     </div>

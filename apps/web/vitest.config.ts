@@ -12,5 +12,7 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
     globals: false,
+    // Interaction tests (user-event, Radix portals) can exceed 5s on a loaded machine.
+    testTimeout: 15_000,
   },
 });

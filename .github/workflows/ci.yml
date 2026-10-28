@@ -1,18 +1,93 @@
 name: CI
 
+# Phase 7 layout (docs/DEPLOYMENT.md, "Continuous integration"):
+#   static       lint, typecheck, build (every package)
+#   unit         unit and component tests that need no database
+#   integration  Postgres migrations, Mongo validator/index sync, API integration suite
+#                (Postgres 16, Redis 7 and a MongoDB 7 single-node replica set as services)
+#   e2e          the web viewport suite exactly as the frontend lane defined it
+#   e2e-release  the release suite: the brief's 16 acceptance criteria through the real UI against
+#                the built API, worker and web app (pull requests to main, nightly, on demand)
+#   audit        pnpm audit: production critical findings block; all high findings are reported
+#   secrets      gitleaks over the full history with .github/gitleaks.toml
+
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Nightly, 02:00 UTC: the release suite (and every other job) on main.
+    - cron: "0 2 * * *"
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
+env:
+  NODE_ENV: test
+  APP_URL: http://localhost:3000
+  API_URL: http://localhost:4000
+  CSRF_SECRET: ci-csrf-secret-not-for-production-32
+  SMTP_URL: smtp://localhost:1025
+  MAIL_FROM: "LeadForge CI <ci@leadforge.local>"
+  DATABASE_URL: postgresql://leadforge:leadforge@127.0.0.1:5432/leadforge?schema=public
+  MONGODB_URI: mongodb://127.0.0.1:27017/?replicaSet=rs0&directConnection=true
+  MONGODB_DB: leadforge_test
+  REDIS_URL: redis://127.0.0.1:6379
+
 jobs:
-  verify:
+  static:
+    name: Lint, typecheck, build
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate dev JWT keys
+        run: pnpm gen:keys --ci >> "$GITHUB_ENV"
+      - name: Prisma generate
+        run: pnpm --filter @leadforge/db-postgres exec prisma generate
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Build
+        run: pnpm build
+
+  unit:
+    name: Unit and component tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Unit tests (everything except the API integration suite)
+        run: pnpm exec turbo run test --filter=!@leadforge/api
+
+  integration:
+    name: Migrations, Mongo sync, API integration suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16-alpine
@@ -30,20 +105,11 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 20
-    env:
-      NODE_ENV: test
-      DATABASE_URL: postgresql://leadforge:leadforge@localhost:5432/leadforge?schema=public
-      MONGODB_URI: mongodb://localhost:27017/?replicaSet=rs0&directConnection=true
-      MONGODB_DB: leadforge_test
-      REDIS_URL: redis://localhost:6379
-      APP_URL: http://localhost:3000
-      API_URL: http://localhost:4000
-      CSRF_SECRET: ci-csrf-secret-not-for-production-32
-      SMTP_URL: smtp://localhost:1025
-      MAIL_FROM: "LeadForge CI <ci@leadforge.local>"
     steps:
       - uses: actions/checkout@v4
 
+      # Service containers cannot pass `--replSet`, so the replica set (needed for transactions)
+      # runs as a plain container started here.
       - name: Start MongoDB replica set
         run: |
           docker run -d --name mongo -p 27017:27017 mongo:7 mongod --replSet rs0 --bind_ip_all
@@ -51,40 +117,186 @@ jobs:
             if docker exec mongo mongosh --quiet --eval "db.adminCommand('ping').ok" >/dev/null 2>&1; then break; fi
             sleep 2
           done
-          docker exec mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          docker exec mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
+          for i in $(seq 1 30); do
+            if docker exec mongo mongosh --quiet --eval "db.hello().isWritablePrimary" | grep -q true; then break; fi
+            sleep 2
+          done
 
       - uses: pnpm/action-setup@v4
         with:
           version: 11
-
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
-
       - name: Install
         run: pnpm install --frozen-lockfile
-
       - name: Generate dev JWT keys
         run: pnpm gen:keys --ci >> "$GITHUB_ENV"
 
-      - name: Prisma generate and migrate
+      - name: Postgres migrations (deploy)
         run: pnpm db:migrate:deploy
+      - name: Build backend packages
+        run: pnpm exec turbo run build --filter=@leadforge/api --filter=@leadforge/worker
+      - name: Mongo validators and indexes (sync)
+        run: node packages/db-mongo/dist/scripts/sync.js
+      - name: API integration suite (tenant isolation, billing, workflows)
+        run: pnpm --filter @leadforge/api test
+        env:
+          TEST_MONGODB_URI: mongodb://127.0.0.1:27017/?replicaSet=rs0&directConnection=true
 
-      - name: Lint
-        run: pnpm lint
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Unit and integration tests
-        run: pnpm test
-
+  e2e:
+    name: Web viewport suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate dev JWT keys
+        run: pnpm gen:keys --ci >> "$GITHUB_ENV"
+      - name: Prisma generate
+        run: pnpm --filter @leadforge/db-postgres exec prisma generate
       - name: Build
         run: pnpm build
-
       - name: Install Playwright browsers
         run: pnpm --filter @leadforge/web exec playwright install --with-deps chromium
-
       - name: End-to-end viewport smoke
         run: pnpm test:e2e
+
+  e2e-release:
+    name: Release suite (16 acceptance criteria, live stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    needs: static
+    # Pull requests to main, the nightly schedule and manual runs (docs/IMPLEMENTATION_PLAN.md).
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.base_ref == 'main')
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: leadforge
+          POSTGRES_PASSWORD: leadforge
+          POSTGRES_DB: leadforge
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U leadforge"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      mailpit:
+        image: axllent/mailpit:v1.32.0
+        ports: ["1025:1025", "8025:8025"]
+    env:
+      # infra/e2e/release-stack.mjs uses only dedicated e2e databases (names ending in _e2e),
+      # Redis db 5 and its own generated JWT keys and CSRF secret; these point it at the services.
+      E2E_DATABASE_URL: postgresql://leadforge:leadforge@127.0.0.1:5432/leadforge_e2e?schema=public
+      E2E_MONGODB_URI: mongodb://127.0.0.1:27017/?replicaSet=rs0&directConnection=true
+      E2E_REDIS_URL: redis://127.0.0.1:6379/5
+      E2E_SMTP_URL: smtp://127.0.0.1:1025
+      E2E_MAILPIT_URL: http://127.0.0.1:8025
+      E2E_LOG_DIR: ${{ github.workspace }}/e2e-release-logs
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      # Service containers cannot pass `--replSet`, so the replica set runs as a plain container.
+      - name: Start MongoDB replica set
+        run: |
+          docker run -d --name mongo -p 27017:27017 mongo:7 mongod --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do
+            if docker exec mongo mongosh --quiet --eval "db.adminCommand('ping').ok" >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          docker exec mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
+          for i in $(seq 1 30); do
+            if docker exec mongo mongosh --quiet --eval "db.hello().isWritablePrimary" | grep -q true; then break; fi
+            sleep 2
+          done
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Prisma generate
+        run: pnpm --filter @leadforge/db-postgres exec prisma generate
+      - name: Build the API and the worker (and the packages they use)
+        run: pnpm exec turbo run build --filter=@leadforge/api --filter=@leadforge/worker
+      - name: Install Playwright browsers
+        run: pnpm --filter @leadforge/web exec playwright install --with-deps chromium
+      # Recreates and seeds the e2e databases, starts the Paystack fixture, the test website, the
+      # API, the worker and the web app (built into apps/web/.next-e2e-release), runs
+      # playwright.release.config.ts (setup, release-1440, release-375, smoke-240/768/1024) and
+      # stops everything again.
+      - name: Release suite
+        run: pnpm e2e:release
+      - name: Upload the Playwright report and stack logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-release-report
+          path: |
+            apps/web/playwright-report/release
+            apps/web/test-results/release
+            e2e-release-logs
+          retention-days: 14
+          if-no-files-found: warn
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # Blocking: a critical advisory in anything that ships (production dependencies).
+      - name: Production dependencies, critical (blocking)
+        run: pnpm audit --prod --audit-level=critical
+      # Reported, not blocking: high and above across all dependencies. Known accepted findings
+      # and their rationale are listed in docs/SECURITY_AND_DATA_COLLECTION.md section 13.
+      - name: All dependencies, high (reported)
+        run: pnpm audit --audit-level=high
+        continue-on-error: true
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks (full history, redacted)
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.28.0 git /repo \
+            --config /repo/.github/gitleaks.toml --redact --no-banner --exit-code 1
+      - name: gitleaks (working tree)
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.28.0 dir /repo \
+            --config /repo/.github/gitleaks.toml --redact --no-banner --exit-code 1

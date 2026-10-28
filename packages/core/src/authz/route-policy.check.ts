@@ -10,9 +10,9 @@ import { REQUIRED_PERMISSION_KEY } from "./decorators.js";
  * instead of silently shipping an unprotected or unreachable route.
  */
 export function assertRoutePolicies(app: INestApplicationContext): void {
-  const discovery = app.get(DiscoveryService);
-  const scanner = app.get(MetadataScanner);
-  const reflector = app.get(Reflector);
+  const discovery = app.get(DiscoveryService, { strict: false });
+  const scanner = new MetadataScanner();
+  const reflector = app.get(Reflector, { strict: false });
   const violations: string[] = [];
 
   for (const wrapper of discovery.getControllers()) {

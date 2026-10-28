@@ -6,6 +6,7 @@ import { CsrfService } from "./csrf.service.js";
 import { UserRepository } from "./repositories/user.repository.js";
 import { SessionRepository } from "./repositories/session.repository.js";
 import { EmailTokenRepository } from "./repositories/email-token.repository.js";
+import { SessionSecurityService } from "./session-security.service.js";
 
 /** Low-level identity primitives shared by auth, organizations and authz. */
 @Global()
@@ -18,6 +19,7 @@ import { EmailTokenRepository } from "./repositories/email-token.repository.js";
     UserRepository,
     SessionRepository,
     EmailTokenRepository,
+    SessionSecurityService,
   ],
   exports: [
     PasswordService,
@@ -27,6 +29,7 @@ import { EmailTokenRepository } from "./repositories/email-token.repository.js";
     UserRepository,
     SessionRepository,
     EmailTokenRepository,
+    SessionSecurityService,
   ],
 })
 export class IdentityModule {}

@@ -6,6 +6,9 @@
    automatic detection skips. Register it explicitly. */
 @source "../../../packages/ui/src";
 
+/* next-themes writes the resolved theme to data-theme, so `dark:` follows the theme toggle. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 @layer base {
   html,
   body {
@@ -20,6 +23,11 @@
 
   main {
     min-width: 0;
+  }
+
+  /* Anchor targets clear the sticky nav and jump-link bar. */
+  [id] {
+    scroll-margin-top: 128px;
   }
 }
 
@@ -37,28 +45,151 @@
   padding-inline: var(--page-pad);
 }
 
-@utility bg-grid {
-  background-image:
-    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
-  background-size: 32px 32px;
+@utility text-balance {
+  text-wrap: balance;
 }
 
-@utility bg-glow {
-  background-image: radial-gradient(60% 50% at 50% 0%, var(--glow), transparent 70%);
+/*
+ * Scroll-driven animations: progressive enhancement only. Browsers without
+ * animation-timeline, and anyone with reduced motion, get the final state with no animation.
+ * Only transform and opacity are animated.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .sda-rise {
+      animation: sda-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 70%;
+    }
+
+    .sda-fade-scale {
+      animation: sda-fade-scale linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 42%;
+    }
+
+    /* Elevation of the sticky nav fades in over the first 48px of page scroll. */
+    .sda-nav-elevation {
+      animation: sda-opacity-in linear both;
+      animation-timeline: scroll(root block);
+      animation-range: 0 48px;
+    }
+
+    /* Reading progress bar for long documents. */
+    .sda-progress {
+      transform-origin: 0 50%;
+      animation: sda-progress linear both;
+      animation-timeline: scroll(root block);
+    }
+  }
 }
 
+/*
+ * Starting pose of the scroll-linked hero showcase before hydration (motion users only). It
+ * matches framer-motion's transform at scroll 0, so hydration causes no jump. Under reduced motion
+ * these never apply and the showcase renders assembled.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .hero-pose-frame {
+    transform: perspective(1600px) scale(0.84) rotateX(22deg);
+  }
+  .hero-pose-panel {
+    transform: translateX(160px) translateY(120px) rotate(4deg);
+  }
+  .hero-pose-chip {
+    transform: translateX(-140px) translateY(90px);
+  }
+  .hero-pose-toast {
+    transform: translateX(-110px) translateY(-50px);
+  }
+}
+
+/* Without scroll timelines the nav elevation is always shown and the progress bar is hidden. */
+@supports not (animation-timeline: scroll()) {
+  .sda-progress {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sda-progress {
+    display: none;
+  }
+}
+
+@keyframes sda-rise {
+  from {
+    opacity: 0;
+    transform: translateY(48px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sda-fade-scale {
+  from {
+    opacity: 0.3;
+    transform: translateY(56px) scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sda-opacity-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sda-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* Lenis smooth scrolling (marketing only; see components/marketing/smooth-scroll.tsx). */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis:not(.lenis-autoToggle).lenis-stopped {
+  overflow: clip;
+}
+.lenis [data-lenis-prevent],
+.lenis [data-lenis-prevent-wheel],
+.lenis [data-lenis-prevent-touch] {
+  overscroll-behavior: contain;
+}
+.lenis.lenis-smooth iframe {
+  pointer-events: none;
+}
+
+/* Legal documents. */
+.prose-legal {
+  font-size: 1rem;
+}
 .prose-legal h2 {
-  margin-top: 2rem;
-  margin-bottom: 0.5rem;
-  font-size: 1.25rem;
-  font-weight: 600;
+  margin-top: 2.5rem;
+  margin-bottom: 0.75rem;
+  font-size: 1.375rem;
+  line-height: 1.75rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
 }
 .prose-legal h3 {
-  margin-top: 1.25rem;
-  margin-bottom: 0.25rem;
-  font-size: 1rem;
-  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.375rem;
+  font-size: 1.0625rem;
+  font-weight: 500;
 }
 .prose-legal p,
 .prose-legal li {
@@ -67,15 +198,23 @@
   font-size: 0.9375rem;
 }
 .prose-legal p {
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.875rem;
 }
 .prose-legal ul {
   list-style: disc;
   padding-left: 1.25rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.875rem;
+}
+.prose-legal li {
+  margin-bottom: 0.25rem;
 }
 .prose-legal a {
   color: var(--primary);
   text-decoration: underline;
   text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+.prose-legal strong {
+  color: var(--foreground);
+  font-weight: 500;
 }

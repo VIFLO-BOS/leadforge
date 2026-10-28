@@ -1,0 +1,29 @@
+# gitleaks configuration for CI and local scans (docs/SECURITY_AND_DATA_COLLECTION.md section 12).
+# Extends the default rules. The allowlist names synthetic test fixtures by value, not by path, so a
+# real key pasted into a test file is still reported.
+#
+#   docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.28.0 git /repo \
+#     --config /repo/.github/gitleaks.toml --redact
+
+title = "LeadForge gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Synthetic fixtures: fake Paystack test keys, test CSRF secrets and the documented seed password"
+regexTarget = "match"
+regexes = [
+  # Paystack-shaped keys used only by unit and API tests (never valid keys).
+  '''sk_test_(fixture|someoneelse|unit|other|abcdef)[0-9a-f]*''',
+  '''sk_live_abcdefgh123''',
+  '''pk_test_abcdef0123456789''',
+  # CSRF secret used by unit tests.
+  '''0123456789abcdef0123456789abcdef''',
+  # Synthetic development login, documented in docs/DEVELOPMENT.md.
+  '''synthetic-owner-pass-2026''',
+  # Synthetic passwords in the API security tests ("...-Horse-Battery...").
+  '''[A-Za-z0-9]+-Horse-Battery[A-Za-z0-9-]*''',
+  # Synthetic load-test login (apps/api/src/scripts/seed-perf.ts, *_perf databases only).
+  '''synthetic-perf-pass-2026''',
+]

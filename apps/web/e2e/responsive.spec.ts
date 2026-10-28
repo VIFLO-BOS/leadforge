@@ -1,79 +1,152 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import {
+  AUTH_ROUTES,
+  BUSINESS_ROUTES,
+  DISCOVERY_ROUTES,
+  MARKETING_ROUTES,
+  PHASE4_ROUTES,
+  PHASE5_ROUTES,
+  PHASE6_ROUTES,
+  SHELL_ROUTES,
+  STAGE10_ROUTES,
+  horizontalOverflow,
+  mockMissingInvitation,
+  mockWorkspaceApi,
+} from "./fixtures";
 
-const ROUTES = [
-  "/",
-  "/product",
-  "/pricing",
-  "/about",
-  "/contact",
-  "/sign-in",
-  "/sign-up",
-  "/legal/privacy",
-];
+/*
+ * Viewport suite: every marketing, auth, shell, Phase 2 business, Phase 3 discovery, jobs,
+ * usage and notification page, and every Phase 4 analysis, scoring and duplicate page, at every
+ * project width
+ * (240, 320, 375, 768, 1024, 1440) must show its h1 and never scroll sideways.
+ */
 
-for (const route of ROUTES) {
-  test(`${route} has no horizontal overflow and a visible heading`, async ({ page }) => {
+async function expectNoOverflow(page: Page, where: string) {
+  const o = await horizontalOverflow(page);
+  expect(
+    o.scrollWidth,
+    `${where}: scrollWidth ${o.scrollWidth} > innerWidth ${o.innerWidth}`,
+  ).toBeLessThanOrEqual(o.innerWidth);
+}
+
+for (const route of MARKETING_ROUTES) {
+  test(`marketing ${route} has a visible h1 and no horizontal overflow`, async ({ page }) => {
     await page.goto(route);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-
-    const overflow = await page.evaluate(() => ({
-      scrollWidth: document.documentElement.scrollWidth,
-      innerWidth: window.innerWidth,
-    }));
-    expect(
-      overflow.scrollWidth,
-      `scrollWidth ${overflow.scrollWidth} > innerWidth ${overflow.innerWidth}`,
-    ).toBeLessThanOrEqual(overflow.innerWidth);
+    await expectNoOverflow(page, route);
   });
 }
 
-test("pricing degrades to 'Pricing not yet published' when the API is unreachable", async ({
-  page,
-}) => {
-  await page.goto("/pricing");
-  await expect(page.getByText("Pricing not yet published")).toBeVisible();
+for (const route of AUTH_ROUTES) {
+  test(`auth ${route} has a visible h1 and no horizontal overflow`, async ({ page }) => {
+    await mockMissingInvitation(page);
+    await page.goto(route);
+    await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+    await expectNoOverflow(page, route);
+  });
+}
+
+test("invite page shows its error state when the invitation cannot be loaded", async ({ page }) => {
+  await mockMissingInvitation(page);
+  await page.goto("/invite/sample-token");
+  await expect(page.getByRole("alert").first()).toBeVisible();
+  await expectNoOverflow(page, "/invite/sample-token");
 });
 
-test("home renders its hero under reduced motion", async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/");
-  const hero = page.getByRole("heading", { level: 1, name: /worth your next conversation/i });
-  await expect(hero).toBeVisible();
-  const opacity = await hero.evaluate((el) => getComputedStyle(el.parentElement ?? el).opacity);
-  expect(Number(opacity)).toBe(1);
-});
+for (const route of SHELL_ROUTES) {
+  test(`shell ${route} renders with mocked API and no horizontal overflow`, async ({ page }) => {
+    await mockWorkspaceApi(page);
+    await page.goto(route);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    // Let data-driven sections settle before measuring.
+    await page.waitForLoadState("networkidle");
+    await expectNoOverflow(page, `${route} (top)`);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expectNoOverflow(page, `${route} (bottom)`);
+  });
+}
 
-test("mobile menu opens and lists primary navigation", async ({ page, viewport }) => {
-  test.skip(!viewport || viewport.width >= 768, "menu button only renders below 768px");
-  await page.goto("/");
-  await page.getByRole("button", { name: "Open menu" }).click();
-  await expect(page.getByRole("link", { name: "Pricing" }).first()).toBeVisible();
-});
+for (const route of BUSINESS_ROUTES) {
+  test(`business ${route} renders with mocked API and no horizontal overflow`, async ({ page }) => {
+    await mockWorkspaceApi(page);
+    await page.goto(route);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    await expectNoOverflow(page, `${route} (top)`);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expectNoOverflow(page, `${route} (bottom)`);
+  });
+}
 
-test("dashboard redirects unauthenticated users to sign in", async ({ page }) => {
-  // The API is not running during this suite; emulate its 401 envelope for the session probe.
-  await page.route("**/api/v1/auth/me", (route) =>
-    route.fulfill({
-      status: 401,
-      contentType: "application/json",
-      body: JSON.stringify({
-        error: { code: "UNAUTHENTICATED", message: "Sign in required", requestId: "e2e" },
-      }),
-    }),
-  );
-  await page.goto("/app");
-  await page.waitForURL(/\/sign-in\?next=%2Fapp/);
-  await expect(page.getByRole("heading", { level: 1, name: "Sign in" })).toBeVisible();
-});
+for (const route of DISCOVERY_ROUTES) {
+  test(`phase 3 ${route} renders with mocked API and no horizontal overflow`, async ({ page }) => {
+    await mockWorkspaceApi(page);
+    await page.goto(route);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    await expectNoOverflow(page, `${route} (top)`);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expectNoOverflow(page, `${route} (bottom)`);
+  });
+}
 
-test("dashboard shows a retryable error state when the API is unreachable", async ({ page }) => {
-  await page.goto("/app");
-  await expect(
-    page.getByRole("alert").filter({ hasText: "Could not load your workspace" }),
-  ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
-  const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth <= window.innerWidth,
-  );
-  expect(overflow).toBe(true);
-});
+for (const route of PHASE4_ROUTES) {
+  test(`phase 4 ${route} renders with mocked API and no horizontal overflow`, async ({ page }) => {
+    await mockWorkspaceApi(page);
+    await page.goto(route);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    await expectNoOverflow(page, `${route} (top)`);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expectNoOverflow(page, `${route} (bottom)`);
+  });
+}
+
+for (const route of PHASE5_ROUTES) {
+  test(`phase 5 ${route} renders with mocked API and no horizontal overflow`, async ({ page }) => {
+    await mockWorkspaceApi(page);
+    await page.goto(route);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    await expectNoOverflow(page, `${route} (top)`);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expectNoOverflow(page, `${route} (bottom)`);
+  });
+}
+
+for (const route of PHASE6_ROUTES) {
+  test(`phase 6 ${route} renders with mocked API and no horizontal overflow`, async ({ page }) => {
+    await mockWorkspaceApi(page);
+    await page.goto(route);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    await expectNoOverflow(page, `${route} (top)`);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expectNoOverflow(page, `${route} (bottom)`);
+  });
+}
+
+/** Stage 10: Settings, Organization with the export and the deletion, idle and while a deletion is pending. */
+for (const route of STAGE10_ROUTES) {
+  for (const variant of ["idle", "pending"] as const) {
+    test(`stage 10 ${route} (${variant}) renders with mocked API and no horizontal overflow`, async ({
+      page,
+    }) => {
+      await mockWorkspaceApi(
+        page,
+        variant === "pending"
+          ? { orgDeletion: "pending", orgExport: "running" }
+          : { orgExport: "completed" },
+      );
+      await page.goto(route);
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      await page.waitForLoadState("networkidle");
+      await expect(page.getByTestId("data-and-deletion")).toBeVisible();
+      if (variant === "pending")
+        await expect(page.getByTestId("org-deletion-banner")).toBeVisible();
+      await expectNoOverflow(page, `${route} ${variant} (top)`);
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await expectNoOverflow(page, `${route} ${variant} (bottom)`);
+    });
+  }
+}

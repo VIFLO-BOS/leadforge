@@ -10,6 +10,9 @@ export const nest = [
   {
     files: ["**/*.ts"],
     rules: {
+      // NestJS resolves constructor injection from emitted decorator metadata, which
+      // requires value imports for injected classes.
+      "@typescript-eslint/consistent-type-imports": "off",
       "no-restricted-imports": [
         "error",
         {

@@ -40,7 +40,7 @@ import {
 } from "@leadforge/core";
 import { paged } from "../common/envelope.interceptor.js";
 
-const AUTH_THROTTLE = { auth: { limit: 10, ttl: 60_000 } };
+const AUTH_THROTTLE = { default: { limit: 10, ttl: 60_000 } };
 
 @ApiTags("auth")
 @Controller("auth")
@@ -73,6 +73,11 @@ export class AuthController {
   @SkipCsrf()
   @Throttle(AUTH_THROTTLE)
   @HttpCode(200)
+  @ApiOperation({
+    summary: "Sign in (sets the session cookies)",
+    description:
+      '401 INVALID_CREDENTIALS for a wrong email or password (the same for unknown emails). 429 RATE_LIMITED after 10 attempts per minute from one address, or 10 failed attempts per account in 15 minutes from any addresses (refused even with the right password). Stage 9: both 429s carry the real wait in Retry-After and details [{ path: "retryAfterSeconds", message: "<seconds>" }]; the per-account one says "Try again in N minutes." and answers unknown emails the same way.',
+  })
   @ApiZodBody(LoginRequest)
   @ApiZodResponse(200, MeResponse)
   async login(
@@ -101,7 +106,7 @@ export class AuthController {
   @Post("refresh")
   @Public()
   @SkipCsrf()
-  @Throttle({ auth: { limit: 30, ttl: 60_000 } })
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @HttpCode(200)
   @ApiOperation({ summary: "Rotate the refresh token and issue a new access token" })
   async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
@@ -139,7 +144,7 @@ export class AuthController {
 
   @Post("resend-verification")
   @AuthOnly()
-  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @HttpCode(202)
   @ApiCookieAuth()
   async resendVerification(@CurrentUser() user: AuthenticatedUser) {

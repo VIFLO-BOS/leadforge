@@ -1,0 +1,25 @@
+# Example Prometheus configuration for LeadForge (docs/OPERATIONS.md, "Monitoring").
+# Replace the targets with your API replicas and worker processes. Both endpoints require
+# METRICS_TOKEN as a bearer token when it is set (always set it when the network is shared).
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  - job_name: leadforge-api
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/leadforge-metrics-token
+    static_configs:
+      - targets: ["api:4000"]
+  - job_name: leadforge-worker
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/leadforge-metrics-token
+    static_configs:
+      - targets: ["worker:9464"]

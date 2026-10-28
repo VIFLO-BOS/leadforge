@@ -66,6 +66,121 @@ export const MailTemplates = {
     };
   },
 
+  discoveryJobFailed(
+    to: string,
+    name: string,
+    jobName: string,
+    reason: string,
+    link: string,
+  ): MailMessage {
+    return {
+      to,
+      subject: `Discovery job "${jobName}" failed`,
+      text: `Hi ${name},
+
+Your LeadForge discovery job "${jobName}" failed: ${reason}
+
+Credits were charged only for records produced before it stopped; the rest of the hold was returned.
+
+Open the job:
+${link}`,
+      html: layout(
+        "Discovery job failed",
+        `<p>Hi ${escapeHtml(name)},</p><p>Your discovery job <strong>${escapeHtml(jobName)}</strong> failed: ${escapeHtml(reason)}</p><p>Credits were charged only for records produced before it stopped; the rest of the hold was returned.</p>${button(link, "Open the job")}`,
+      ),
+    };
+  },
+
+  /** One lead (businessName) or several (count) assigned to the recipient. */
+  leadAssigned(
+    to: string,
+    name: string,
+    assignedBy: string,
+    count: number,
+    businessName: string | null,
+    link: string,
+  ): MailMessage {
+    const what =
+      count === 1 ? (businessName ? `the lead "${businessName}"` : "a lead") : `${count} leads`;
+    return {
+      to,
+      subject:
+        count === 1
+          ? "A lead was assigned to you on LeadForge"
+          : `${count} leads were assigned to you on LeadForge`,
+      text: `Hi ${name},
+
+${assignedBy} assigned ${what} to you.
+
+Open your pipeline:
+${link}
+
+You can turn off assignment emails in Settings, Notifications.`,
+      html: layout(
+        "Lead assigned",
+        `<p>Hi ${escapeHtml(name)},</p><p>${escapeHtml(assignedBy)} assigned ${escapeHtml(what)} to you.</p>${button(link, "Open your pipeline")}<p>You can turn off assignment emails in Settings, Notifications.</p>`,
+      ),
+    };
+  },
+
+  /**
+   * Phase 6 billing emails (receipt, failed payment, subscription change, refund, alert). Amounts
+   * arrive already formatted from integer minor units.
+   */
+  billingNotice(
+    to: string,
+    name: string,
+    input: {
+      subject: string;
+      heading: string;
+      paragraphs: string[];
+      link: string;
+      linkLabel: string;
+    },
+  ): MailMessage {
+    return {
+      to,
+      subject: input.subject,
+      text: `Hi ${name},\n\n${input.paragraphs.join("\n\n")}\n\n${input.linkLabel}:\n${input.link}\n\nYou can turn off billing emails in Settings, Notifications.`,
+      html: layout(
+        input.heading,
+        `<p>Hi ${escapeHtml(name)},</p>${input.paragraphs.map((p) => `<p>${escapeHtml(p)}</p>`).join("")}${button(input.link, input.linkLabel)}<p>You can turn off billing emails in Settings, Notifications.</p>`,
+      ),
+    };
+  },
+
+  /**
+   * Stage 10 organization notices to owners and admins (deletion scheduled, reminder, cancelled,
+   * purged). Service notices about the account itself: sent whatever the notification preferences.
+   */
+  organizationNotice(
+    to: string,
+    name: string,
+    input: {
+      subject: string;
+      heading: string;
+      paragraphs: string[];
+      link: string | null;
+      linkLabel: string;
+    },
+  ): MailMessage {
+    const greeting = name ? `Hi ${name},` : "Hello,";
+    return {
+      to,
+      subject: input.subject,
+      text: [
+        greeting,
+        ...input.paragraphs,
+        ...(input.link ? [`${input.linkLabel}:\n${input.link}`] : []),
+        "You receive this notice because you are an owner or administrator of the organization.",
+      ].join("\n\n"),
+      html: layout(
+        input.heading,
+        `<p>${escapeHtml(greeting)}</p>${input.paragraphs.map((p) => `<p>${escapeHtml(p)}</p>`).join("")}${input.link ? button(input.link, input.linkLabel) : ""}<p>You receive this notice because you are an owner or administrator of the organization.</p>`,
+      ),
+    };
+  },
+
   passwordChanged(to: string, name: string): MailMessage {
     return {
       to,

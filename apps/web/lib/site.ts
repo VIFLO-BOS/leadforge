@@ -45,6 +45,7 @@ export const FOOTER_COLUMNS = [
       { href: "/legal/terms", label: "Terms" },
       { href: "/legal/acceptable-use", label: "Acceptable use" },
       { href: "/legal/data-collection", label: "Data collection policy" },
+      { href: "/legal/data-sources", label: "Data sources and licences" },
     ],
   },
 ] as const;

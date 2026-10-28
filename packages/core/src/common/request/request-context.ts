@@ -26,11 +26,12 @@ export function getRequestId(req: Request): string {
   return typeof header === "string" && header ? header : "unknown";
 }
 
+/**
+ * The client address as Express computes it from the socket and the `trust proxy` setting
+ * (TRUST_PROXY_HOPS): only the hops added by our own proxies are trusted. The left-most
+ * `X-Forwarded-For` entry is whatever the client sent, so it is never used here; reading it
+ * let anyone pick a fresh address per request and skip every per-IP rate limit.
+ */
 export function clientIp(req: Request): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  if (typeof forwarded === "string" && forwarded.length > 0) {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) return first;
-  }
   return req.ip ?? req.socket?.remoteAddress ?? "unknown";
 }

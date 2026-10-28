@@ -7,24 +7,23 @@ import {
   type MemberSummary,
 } from "@leadforge/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Users } from "lucide-react";
-import { useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { MailPlus, Users } from "lucide-react";
+import { useMemo, useState } from "react";
 import {
   Avatar,
   AvatarFallback,
   Badge,
   Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
   ConfirmDialog,
+  DataTable,
   EmptyState,
   ErrorState,
-  PageHeader,
-  Skeleton,
-  StatusIndicator,
+  Heading,
+  HeadingLevel,
   initials,
+  PageHeader,
+  StatusIndicator,
   toast,
 } from "@leadforge/ui";
 import { apiFetch, apiFetchPaged } from "@/lib/api";
@@ -32,10 +31,13 @@ import { friendlyMessage, requestIdOf } from "@/lib/errors";
 import { useWorkspace } from "../app-shell";
 import { InviteMemberDialog } from "./invite-member-dialog";
 
+const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
+
 export function TeamPage() {
   const { org, me } = useWorkspace();
   const queryClient = useQueryClient();
   const canManage = roleHasPermission(org.role, "members:manage");
+  const canManageOwners = roleHasPermission(org.role, "members:manage_owners");
   const [revokeTarget, setRevokeTarget] = useState<InvitationSummary | null>(null);
   const [removeTarget, setRemoveTarget] = useState<MemberSummary | null>(null);
 
@@ -72,136 +74,231 @@ export function TeamPage() {
     onSettled: () => setRemoveTarget(null),
   });
 
+  const memberColumns = useMemo<ColumnDef<MemberSummary>[]>(
+    () => [
+      {
+        id: "member",
+        header: "Member",
+        meta: { label: "Member", mobileTitle: true },
+        enableHiding: false,
+        cell: ({ row }) => {
+          const m = row.original;
+          const isSelf = m.userId === me.user.id;
+          return (
+            <div className="flex min-w-0 items-center gap-3">
+              <Avatar>
+                <AvatarFallback>{initials(m.name)}</AvatarFallback>
+              </Avatar>
+              <div className="flex min-w-0 flex-col">
+                <span className="break-anywhere font-medium">
+                  {m.name}
+                  {isSelf ? (
+                    <span className="text-muted-foreground font-normal"> (you)</span>
+                  ) : null}
+                </span>
+                <span className="break-anywhere text-muted-foreground text-xs">{m.email}</span>
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        id: "role",
+        header: "Role",
+        meta: { label: "Role" },
+        cell: ({ row }) => (
+          <Badge variant={row.original.role === "owner" ? "primary" : "neutral"}>
+            {ROLE_LABELS[row.original.role]}
+          </Badge>
+        ),
+      },
+      {
+        id: "status",
+        header: "Status",
+        meta: { label: "Status" },
+        cell: ({ row }) =>
+          row.original.status === "suspended" ? (
+            <StatusIndicator tone="warning" label="Suspended" />
+          ) : (
+            <StatusIndicator tone="success" label="Active" />
+          ),
+      },
+      {
+        id: "joined",
+        header: "Joined",
+        meta: { label: "Joined" },
+        cell: ({ row }) => (
+          <time
+            dateTime={row.original.joinedAt}
+            className="text-muted-foreground whitespace-nowrap"
+          >
+            {dateFormat.format(new Date(row.original.joinedAt))}
+          </time>
+        ),
+      },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        meta: { label: "Actions", align: "end", mobileActions: true },
+        enableHiding: false,
+        cell: ({ row }) => {
+          const m = row.original;
+          const removable =
+            canManage && m.userId !== me.user.id && (m.role !== "owner" || canManageOwners);
+          return removable ? (
+            <Button
+              variant="text"
+              size="sm"
+              onClick={() => setRemoveTarget(m)}
+              aria-label={`Remove ${m.name}`}
+            >
+              Remove
+            </Button>
+          ) : null;
+        },
+      },
+    ],
+    [canManage, canManageOwners, me.user.id],
+  );
+
+  const invitationColumns = useMemo<ColumnDef<InvitationSummary>[]>(
+    () => [
+      {
+        id: "email",
+        header: "Email",
+        meta: { label: "Email", mobileTitle: true },
+        enableHiding: false,
+        cell: ({ row }) => <span className="break-anywhere font-medium">{row.original.email}</span>,
+      },
+      {
+        id: "role",
+        header: "Role",
+        meta: { label: "Role" },
+        cell: ({ row }) => <Badge>{ROLE_LABELS[row.original.role]}</Badge>,
+      },
+      {
+        id: "invitedBy",
+        header: "Invited by",
+        meta: { label: "Invited by" },
+        cell: ({ row }) => <span className="break-anywhere">{row.original.invitedBy.name}</span>,
+      },
+      {
+        id: "expires",
+        header: "Expires",
+        meta: { label: "Expires" },
+        cell: ({ row }) => (
+          <time
+            dateTime={row.original.expiresAt}
+            className="text-muted-foreground whitespace-nowrap"
+          >
+            {dateFormat.format(new Date(row.original.expiresAt))}
+          </time>
+        ),
+      },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        meta: { label: "Actions", align: "end", mobileActions: true },
+        enableHiding: false,
+        cell: ({ row }) => (
+          <Button
+            variant="text"
+            size="sm"
+            onClick={() => setRevokeTarget(row.original)}
+            aria-label={`Revoke invitation for ${row.original.email}`}
+          >
+            Revoke
+          </Button>
+        ),
+      },
+    ],
+    [],
+  );
+
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <PageHeader
+        eyebrow="Account"
         title="Team Members"
         description={`People with access to ${org.name} and the role each one holds.`}
         actions={canManage ? <InviteMemberDialog organizationId={org.id} /> : null}
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Members</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {members.isPending ? (
-            <ul className="flex flex-col gap-3">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <li key={i} className="flex items-center gap-3">
-                  <Skeleton className="size-8 rounded-full" />
-                  <div className="flex flex-1 flex-col gap-1.5">
-                    <Skeleton className="h-4 w-40 max-w-full" />
-                    <Skeleton className="h-3 w-56 max-w-full" />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : members.isError ? (
-            <ErrorState
-              message={friendlyMessage(members.error)}
-              requestId={requestIdOf(members.error)}
-              onRetry={() => void members.refetch()}
-            />
-          ) : members.data.data.length === 0 ? (
-            <EmptyState
-              icon={Users}
-              title="No members found"
-              description="This is unexpected. Refresh to try again."
-            />
-          ) : (
-            <ul className="divide-border divide-y">
-              {members.data.data.map((m) => {
-                const isSelf = m.userId === me.user.id;
-                const removable =
-                  canManage &&
-                  !isSelf &&
-                  (m.role !== "owner" || roleHasPermission(org.role, "members:manage_owners"));
-                return (
-                  <li
-                    key={m.userId}
-                    className="flex min-w-0 flex-col gap-2 py-3 min-[480px]:flex-row min-[480px]:items-center"
-                  >
-                    <div className="flex min-w-0 flex-1 items-center gap-3">
-                      <Avatar>
-                        <AvatarFallback>{initials(m.name)}</AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">
-                          {m.name}
-                          {isSelf ? (
-                            <span className="text-muted-foreground ml-1 text-xs">(you)</span>
-                          ) : null}
-                        </p>
-                        <p className="break-anywhere text-muted-foreground text-xs">{m.email}</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 pl-11 min-[480px]:pl-0">
-                      <Badge variant={m.role === "owner" ? "primary" : "neutral"}>
-                        {ROLE_LABELS[m.role]}
-                      </Badge>
-                      {m.status === "suspended" ? (
-                        <StatusIndicator tone="warning" label="Suspended" />
-                      ) : null}
-                      {removable ? (
-                        <Button variant="ghost" size="sm" onClick={() => setRemoveTarget(m)}>
-                          Remove
-                        </Button>
-                      ) : null}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      <section aria-labelledby="members-title" className="flex flex-col gap-3">
+        <Heading id="members-title" className="text-base font-medium">
+          Members
+          {members.data ? (
+            <span className="text-muted-foreground font-normal"> ({members.data.data.length})</span>
+          ) : null}
+        </Heading>
+        <HeadingLevel>
+          <DataTable
+            caption="Members"
+            columns={memberColumns}
+            data={members.data?.data ?? []}
+            getRowId={(m) => m.userId}
+            loading={members.isPending}
+            skeletonRows={3}
+            mobileCards
+            enableDensityToggle={false}
+            enableColumnVisibility={false}
+            error={
+              members.isError ? (
+                <ErrorState
+                  message={friendlyMessage(members.error)}
+                  requestId={requestIdOf(members.error)}
+                  onRetry={() => void members.refetch()}
+                />
+              ) : undefined
+            }
+            empty={
+              <EmptyState
+                size="compact"
+                icon={Users}
+                title="No members found"
+                description="This is unexpected. Refresh to try again."
+              />
+            }
+          />
+        </HeadingLevel>
+      </section>
 
       {canManage ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Pending invitations</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {invitations.isPending ? (
-              <div className="flex flex-col gap-2">
-                <Skeleton className="h-10" />
-                <Skeleton className="h-10" />
-              </div>
-            ) : invitations.isError ? (
-              <ErrorState
-                message={friendlyMessage(invitations.error)}
-                requestId={requestIdOf(invitations.error)}
-                onRetry={() => void invitations.refetch()}
-              />
-            ) : invitations.data.data.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No pending invitations.</p>
-            ) : (
-              <ul className="divide-border divide-y">
-                {invitations.data.data.map((inv) => (
-                  <li
-                    key={inv.id}
-                    className="flex min-w-0 flex-col gap-2 py-3 min-[480px]:flex-row min-[480px]:items-center"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="break-anywhere text-sm font-medium">{inv.email}</p>
-                      <p className="text-muted-foreground text-xs">
-                        Invited by {inv.invitedBy.name}. Expires{" "}
-                        {new Date(inv.expiresAt).toLocaleDateString()}.
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge>{ROLE_LABELS[inv.role]}</Badge>
-                      <Button variant="ghost" size="sm" onClick={() => setRevokeTarget(inv)}>
-                        Revoke
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+        <section aria-labelledby="invitations-title" className="flex flex-col gap-3">
+          <Heading id="invitations-title" className="text-base font-medium">
+            Pending invitations
+          </Heading>
+          <HeadingLevel>
+            <DataTable
+              caption="Pending invitations"
+              columns={invitationColumns}
+              data={invitations.data?.data ?? []}
+              getRowId={(inv) => inv.id}
+              loading={invitations.isPending}
+              skeletonRows={2}
+              mobileCards
+              enableDensityToggle={false}
+              enableColumnVisibility={false}
+              error={
+                invitations.isError ? (
+                  <ErrorState
+                    message={friendlyMessage(invitations.error)}
+                    requestId={requestIdOf(invitations.error)}
+                    onRetry={() => void invitations.refetch()}
+                  />
+                ) : undefined
+              }
+              empty={
+                <EmptyState
+                  size="compact"
+                  icon={MailPlus}
+                  title="No pending invitations"
+                  description="Invitations you send appear here until they are accepted, revoked or expire after 7 days."
+                />
+              }
+            />
+          </HeadingLevel>
+        </section>
       ) : null}
 
       <ConfirmDialog

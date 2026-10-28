@@ -79,17 +79,25 @@ model EmailToken {
 }
 
 model Organization {
-  id                  String    @id @db.Uuid
-  name                String
-  slug                String    @unique
-  country             String    @db.Char(2)
-  defaultCurrency     String    @default("NGN") @map("default_currency") @db.Char(3)
-  freshnessDays       Int       @default(180) @map("freshness_days")
-  createdByUserId     String    @map("created_by_user_id") @db.Uuid
-  createdAt           DateTime  @default(now()) @map("created_at")
-  updatedAt           DateTime  @updatedAt @map("updated_at")
-  deletedAt           DateTime? @map("deleted_at")
-  deletionRequestedAt DateTime? @map("deletion_requested_at")
+  id                        String    @id @db.Uuid
+  name                      String
+  slug                      String    @unique
+  country                   String    @db.Char(2)
+  defaultCurrency           String    @default("NGN") @map("default_currency") @db.Char(3)
+  freshnessDays             Int       @default(180) @map("freshness_days")
+  createdByUserId           String    @map("created_by_user_id") @db.Uuid
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
+  /// Stage 10: set when the purge starts; from then on no member can open the organization.
+  deletedAt                 DateTime? @map("deleted_at")
+  deletionRequestedAt       DateTime? @map("deletion_requested_at")
+  /// Stage 10: the owner who asked for the deletion, and when the purge may start (requested + 14 days).
+  deletionRequestedByUserId String?   @map("deletion_requested_by_user_id") @db.Uuid
+  purgeAfter                DateTime? @map("purge_after")
+  /// Stage 10: the "deletion in 3 days" reminder went out (cleared when a deletion is cancelled).
+  deletionReminderSentAt    DateTime? @map("deletion_reminder_sent_at")
+  /// Stage 10: the purge finished; the row stays (invoices and the ledger point at it), anonymized.
+  purgedAt                  DateTime? @map("purged_at")
 
   createdBy               User                     @relation("OrganizationCreator", fields: [createdByUserId], references: [id])
   memberships             Membership[]
@@ -99,7 +107,30 @@ model Organization {
   billingCustomer         BillingCustomer?
   usageDaily              UsageDaily[]
 
+  @@index([purgeAfter])
   @@map("organizations")
+}
+
+/// Stage 10: one erasure record per purged organization. It deliberately has no foreign key and
+/// holds no personal data (ids, timestamps, counts), so it outlives the purge and tells operators
+/// which deletions to re-apply after a restore (docs/OPERATIONS.md). `steps` records each finished
+/// step (`{ "<step>": { "completedAt": iso, ...counts } }`) so a crashed purge resumes where it stopped.
+model OrganizationErasure {
+  id                String    @id @db.Uuid
+  organizationId    String    @unique @map("organization_id") @db.Uuid
+  requestedAt       DateTime? @map("requested_at")
+  requestedByUserId String?   @map("requested_by_user_id") @db.Uuid
+  purgeAfter        DateTime? @map("purge_after")
+  /// schedule (the maintenance scan) or reapply (re-run after a restore).
+  trigger           String    @default("schedule")
+  startedAt         DateTime  @default(now()) @map("started_at")
+  completedAt       DateTime? @map("completed_at")
+  attempts          Int       @default(0)
+  steps             Json      @default("{}")
+  lastError         String?   @map("last_error")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@map("organization_erasures")
 }
 
 enum OrganizationRole {
@@ -171,12 +202,13 @@ model ApiKey {
 }
 
 model NotificationPreference {
-  userId         String   @map("user_id") @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  emailJobEvents Boolean  @default(true) @map("email_job_events")
-  emailBilling   Boolean  @default(true) @map("email_billing")
-  inappAll       Boolean  @default(true) @map("inapp_all")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  userId           String   @map("user_id") @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  emailJobEvents   Boolean  @default(true) @map("email_job_events")
+  emailBilling     Boolean  @default(true) @map("email_billing")
+  inappAll         Boolean  @default(true) @map("inapp_all")
+  emailAssignments Boolean  @default(true) @map("email_assignments")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -204,13 +236,14 @@ model BillingCustomer {
   createdAt            DateTime        @default(now()) @map("created_at")
   updatedAt            DateTime        @updatedAt @map("updated_at")
 
-  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization  Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   subscriptions Subscription[]
   invoices      Invoice[]
   payments      Payment[]
   ledger        CreditLedger[]
   entitlements  Entitlement[]
   audit         BillingAudit[]
+  disputes      PaymentDispute[]
 
   @@map("billing_customers")
 }
@@ -221,22 +254,25 @@ enum PlanInterval {
 }
 
 model Plan {
-  id               String       @id @db.Uuid
-  code             String       @unique
-  name             String
-  description      String?
-  interval         PlanInterval
-  priceMinor       BigInt       @map("price_minor")
-  currency         String       @db.Char(3)
-  includedCredits  Int          @map("included_credits")
-  maxMembers       Int          @map("max_members")
-  exportRowCap     Int          @map("export_row_cap")
-  isActive         Boolean      @default(true) @map("is_active")
-  isPlaceholder    Boolean      @default(true) @map("is_placeholder")
-  providerPlanCode String?      @unique @map("provider_plan_code")
-  sortOrder        Int          @default(0) @map("sort_order")
-  createdAt        DateTime     @default(now()) @map("created_at")
-  updatedAt        DateTime     @updatedAt @map("updated_at")
+  id                     String       @id @db.Uuid
+  code                   String       @unique
+  name                   String
+  description            String?
+  interval               PlanInterval
+  priceMinor             BigInt       @map("price_minor")
+  currency               String       @db.Char(3)
+  includedCredits        Int          @map("included_credits")
+  maxMembers             Int          @map("max_members")
+  exportRowCap           Int          @map("export_row_cap")
+  /// Phase 6 entitlements carried by the plan (written to `entitlements` on plan changes).
+  discoveryEnabled       Boolean      @default(true) @map("discovery_enabled")
+  websiteAnalysisEnabled Boolean      @default(true) @map("website_analysis_enabled")
+  isActive               Boolean      @default(true) @map("is_active")
+  isPlaceholder          Boolean      @default(true) @map("is_placeholder")
+  providerPlanCode       String?      @unique @map("provider_plan_code")
+  sortOrder              Int          @default(0) @map("sort_order")
+  createdAt              DateTime     @default(now()) @map("created_at")
+  updatedAt              DateTime     @updatedAt @map("updated_at")
 
   subscriptions Subscription[]
 
@@ -277,6 +313,13 @@ model Subscription {
   currentPeriodEnd         DateTime?          @map("current_period_end")
   cancelAtPeriodEnd        Boolean            @default(false) @map("cancel_at_period_end")
   cancelledAt              DateTime?          @map("cancelled_at")
+  /// Phase 6: when the subscription became past_due (failed renewal); cleared when a renewal succeeds.
+  pastDueAt                DateTime?          @map("past_due_at")
+  /// Phase 6: when it became cancelled or expired.
+  endedAt                  DateTime?          @map("ended_at")
+  /// Phase 6: the provider's own status word at the last sync (active, non-renewing, attention, complete, cancelled).
+  providerStatus           String?            @map("provider_status")
+  lastSyncedAt             DateTime?          @map("last_synced_at")
   createdAt                DateTime           @default(now()) @map("created_at")
   updatedAt                DateTime           @updatedAt @map("updated_at")
 
@@ -285,6 +328,7 @@ model Subscription {
   invoices        Invoice[]
 
   @@index([billingCustomerId, status])
+  @@index([status, currentPeriodEnd])
   @@map("subscriptions")
 }
 
@@ -311,6 +355,13 @@ model Invoice {
   paidAt              DateTime?     @map("paid_at")
   providerInvoiceCode String?       @unique @map("provider_invoice_code")
   pdfKey              String?       @map("pdf_key")
+  /// Phase 6: line items `[{ description, quantity, unitMinor, amountMinor }]` (minor units as strings).
+  lines               Json          @default("[]")
+  /// Phase 6: who the invoice is addressed to `{ organizationName, email, country }`, frozen at issue.
+  billTo              Json?         @map("bill_to")
+  periodStart         DateTime?     @map("period_start")
+  periodEnd           DateTime?     @map("period_end")
+  pdfGeneratedAt      DateTime?     @map("pdf_generated_at")
   createdAt           DateTime      @default(now()) @map("created_at")
 
   billingCustomer BillingCustomer @relation(fields: [billingCustomerId], references: [id])
@@ -354,12 +405,33 @@ model Payment {
   reversedAt            DateTime?       @map("reversed_at")
   lastEventId           String?         @map("last_event_id") @db.Uuid
   idempotencyKey        String          @unique @map("idempotency_key")
+  /// Phase 6: credits this payment buys (credit packs), frozen at checkout.
+  creditUnits           Int?            @map("credit_units")
+  /// Phase 6: what was bought, e.g. "Credit pack: 500 credits" (frozen at checkout).
+  description           String?
+  /// Phase 6: hosted checkout returned by the provider, replayed for a repeated Idempotency-Key.
+  authorizationUrl      String?         @map("authorization_url")
+  accessCode            String?         @map("access_code")
+  /// Phase 6: the provider's last status word and gateway message from verify.
+  providerStatus        String?         @map("provider_status")
+  gatewayResponse       String?         @map("gateway_response")
+  paidAt                DateTime?       @map("paid_at")
+  lastVerifiedAt        DateTime?       @map("last_verified_at")
+  verifyAttempts        Int             @default(0) @map("verify_attempts")
+  /// Phase 6: set when verification disagrees (amount, currency, reference) or a dispute opens; no grant while set.
+  flagReason            String?         @map("flag_reason")
+  flaggedAt             DateTime?       @map("flagged_at")
+  /// Phase 6: total of processed refunds in minor units.
+  refundedMinor         BigInt          @default(0) @map("refunded_minor")
+  initiatedByUserId     String?         @map("initiated_by_user_id") @db.Uuid
 
-  billingCustomer BillingCustomer @relation(fields: [billingCustomerId], references: [id])
-  invoice         Invoice?        @relation(fields: [invoiceId], references: [id])
+  billingCustomer BillingCustomer  @relation(fields: [billingCustomerId], references: [id])
+  invoice         Invoice?         @relation(fields: [invoiceId], references: [id])
   refunds         Refund[]
+  disputes        PaymentDispute[]
 
   @@index([billingCustomerId, status, initiatedAt])
+  @@index([status, initiatedAt])
   @@map("payments")
 }
 
@@ -379,9 +451,17 @@ model Refund {
   reason                  String?
   createdAt               DateTime     @default(now()) @map("created_at")
   processedAt             DateTime?    @map("processed_at")
+  /// Phase 6: who asked for it (null when it started in the provider dashboard).
+  requestedByUserId       String?      @map("requested_by_user_id") @db.Uuid
+  providerStatus          String?      @map("provider_status")
+  failureReason           String?      @map("failure_reason")
+  failedAt                DateTime?    @map("failed_at")
+  /// Phase 6: credits clawed back by the refund_reversal ledger entry.
+  reversalUnits           Int?         @map("reversal_units")
 
   payment Payment @relation(fields: [paymentId], references: [id])
 
+  @@index([paymentId])
   @@map("refunds")
 }
 
@@ -404,9 +484,12 @@ model PaymentWebhookEvent {
   processedAt      DateTime?               @map("processed_at")
   processingStatus WebhookProcessingStatus @default(received) @map("processing_status")
   error            String?
+  /// Phase 6: processing attempts (the worker and reconciliation).
+  attempts         Int                     @default(0)
 
   @@unique([provider, providerEventId])
   @@index([reference])
+  @@index([processingStatus, receivedAt])
   @@map("payment_webhook_events")
 }
 
@@ -430,6 +513,7 @@ model CreditLedger {
   balanceAfter      Int             @map("balance_after")
   referenceType     String?         @map("reference_type")
   referenceId       String?         @map("reference_id")
+  referenceName     String?         @map("reference_name")
   holdId            String?         @map("hold_id") @db.Uuid
   idempotencyKey    String          @unique @map("idempotency_key")
   description       String?
@@ -442,6 +526,8 @@ model CreditLedger {
 
   @@index([billingCustomerId, createdAt])
   @@index([referenceType, referenceId])
+  @@index([holdId])
+  @@index([entryType, createdAt])
   @@map("credit_ledger")
 }
 
@@ -470,6 +556,7 @@ enum ReconciliationKind {
   payments
   holds
   subscriptions
+  webhooks
 }
 
 model ReconciliationRun {
@@ -501,16 +588,60 @@ model BillingAudit {
   @@map("billing_audit")
 }
 
+/// Phase 6: gap-free invoice numbering. One row per scope (the calendar year); the counter is
+/// incremented under a row lock inside the transaction that issues the invoice, so a rolled-back
+/// payment never consumes a number.
+model InvoiceCounter {
+  scope     String @id
+  lastValue Int    @default(0) @map("last_value")
+
+  @@map("invoice_counters")
+}
+
+enum DisputeStatus {
+  open
+  awaiting_merchant
+  awaiting_bank
+  resolved
+}
+
+/// Phase 6: chargebacks reported by the provider (charge.dispute.*). Recorded and alerted; the
+/// payment is flagged while one is open.
+model PaymentDispute {
+  id                String        @id @db.Uuid
+  billingCustomerId String        @map("billing_customer_id") @db.Uuid
+  paymentId         String        @map("payment_id") @db.Uuid
+  providerDisputeId String        @unique @map("provider_dispute_id")
+  status            DisputeStatus @default(open)
+  providerStatus    String?       @map("provider_status")
+  resolution        String?
+  amountMinor       BigInt?       @map("amount_minor")
+  currency          String?       @db.Char(3)
+  reason            String?
+  dueAt             DateTime?     @map("due_at")
+  openedAt          DateTime      @default(now()) @map("opened_at")
+  resolvedAt        DateTime?     @map("resolved_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  billingCustomer BillingCustomer @relation(fields: [billingCustomerId], references: [id])
+  payment         Payment         @relation(fields: [paymentId], references: [id])
+
+  @@index([billingCustomerId, openedAt])
+  @@map("payment_disputes")
+}
+
 model UsageDaily {
   id             String   @id @db.Uuid
   organizationId String   @map("organization_id") @db.Uuid
   day            DateTime @db.Date
   metric         String
   value          BigInt
+  updatedAt      DateTime @default(now()) @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, day, metric])
+  @@index([organizationId, metric, day])
   @@map("usage_daily")
 }
 

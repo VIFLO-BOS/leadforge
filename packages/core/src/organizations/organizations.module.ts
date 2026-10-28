@@ -5,9 +5,10 @@ import { OrganizationRepository } from "./repositories/organization.repository.j
 import { MembershipRepository } from "./repositories/membership.repository.js";
 import { InvitationRepository } from "./repositories/invitation.repository.js";
 import { IdentityModule } from "../auth/identity.module.js";
+import { EntitlementsModule } from "../entitlements/entitlements.module.js";
 
 @Module({
-  imports: [IdentityModule],
+  imports: [IdentityModule, EntitlementsModule],
   providers: [
     OrganizationsService,
     InvitationsService,

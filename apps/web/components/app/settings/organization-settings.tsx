@@ -2,37 +2,39 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { UpdateOrganizationRequest, type OrganizationProfile } from "@leadforge/contracts";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import {
   Button,
   Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
   CardTitle,
-  Code,
+  CopyableValue,
   ErrorState,
-  FormField,
-  Input,
   Skeleton,
+  TextField,
   toast,
 } from "@leadforge/ui";
 import { apiFetch } from "@/lib/api";
 import { friendlyMessage, requestIdOf } from "@/lib/errors";
+import { useOrgProfile } from "@/lib/hooks/use-org-lifecycle";
+import { queryKeys } from "@/lib/query-keys";
 import { useWorkspace } from "../app-shell";
+import { DataAndDeletionSection } from "./data-and-deletion";
 
 type Values = UpdateOrganizationRequest;
 
-export function OrganizationSettings({ canEdit }: { canEdit: boolean }) {
+export function OrganizationSettings({
+  canEdit,
+  navigate,
+}: {
+  canEdit: boolean;
+  /** Where the browser goes for an organization export download (tests pass a spy). */
+  navigate?: (url: string) => void;
+}) {
   const { org } = useWorkspace();
   const queryClient = useQueryClient();
-
-  const profile = useQuery({
-    queryKey: ["org", org.id, "profile"],
-    queryFn: () => apiFetch<OrganizationProfile>("/organizations/current"),
-  });
+  const profile = useOrgProfile();
 
   const form = useForm<Values>({
     resolver: zodResolver(UpdateOrganizationRequest),
@@ -55,7 +57,7 @@ export function OrganizationSettings({ canEdit }: { canEdit: boolean }) {
       apiFetch<OrganizationProfile>("/organizations/current", { method: "PATCH", body: values }),
     onSuccess: () => {
       toast.success("Organization updated");
-      void queryClient.invalidateQueries({ queryKey: ["org", org.id, "profile"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.orgProfile(org.id) });
       void queryClient.invalidateQueries({ queryKey: ["auth"] });
     },
     onError: (err) => toast.error(friendlyMessage(err)),
@@ -63,12 +65,11 @@ export function OrganizationSettings({ canEdit }: { canEdit: boolean }) {
 
   if (profile.isPending) {
     return (
-      <Card>
-        <CardContent className="flex flex-col gap-4 p-5">
-          <Skeleton className="h-10" />
-          <Skeleton className="h-10" />
-          <Skeleton className="h-10" />
-        </CardContent>
+      <Card className="flex max-w-3xl flex-col gap-5 p-5 sm:p-6" aria-busy="true">
+        <Skeleton className="h-5 w-48" />
+        <Skeleton className="h-14" />
+        <Skeleton className="h-14" />
+        <Skeleton className="h-14" />
       </Card>
     );
   }
@@ -86,90 +87,80 @@ export function OrganizationSettings({ canEdit }: { canEdit: boolean }) {
   const { errors } = form.formState;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Organization profile</CardTitle>
-        <CardDescription>
-          {canEdit
-            ? "Changes apply to everyone in the workspace."
-            : "Only the organization owner can change these settings."}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <div className="flex min-w-0 flex-col gap-6">
+      <Card className="max-w-3xl">
+        <div className="flex flex-col gap-1 p-5 pb-2 sm:p-6 sm:pb-2">
+          <CardTitle className="leading-normal">Organization profile</CardTitle>
+          <p className="text-muted-foreground text-sm">
+            {canEdit
+              ? "Changes apply to everyone in the workspace."
+              : "Only the organization owner can change these settings."}
+          </p>
+        </div>
         <form
           onSubmit={form.handleSubmit((v) => update.mutate(v))}
           noValidate
-          className="flex max-w-lg flex-col gap-4"
+          className="flex flex-col gap-5 p-5 pt-4 sm:p-6 sm:pt-4"
         >
-          <FormField id="org-name" label="Name" required error={errors.name?.message}>
-            <Input
-              id="org-name"
-              disabled={!canEdit}
-              invalid={Boolean(errors.name)}
-              {...form.register("name")}
-            />
-          </FormField>
-          <div className="xs:grid-cols-2 grid grid-cols-1 gap-4">
-            <FormField
+          <TextField
+            id="org-name"
+            label="Organization name"
+            required
+            disabled={!canEdit}
+            error={errors.name?.message}
+            {...form.register("name")}
+          />
+          <div className="xs:grid-cols-2 grid grid-cols-1 gap-5">
+            <TextField
               id="org-country"
               label="Country"
               required
-              hint="Two-letter code"
+              maxLength={2}
+              className="uppercase"
+              hint="Two-letter code, for example NG"
+              disabled={!canEdit}
               error={errors.country?.message}
-            >
-              <Input
-                id="org-country"
-                maxLength={2}
-                className="uppercase"
-                disabled={!canEdit}
-                {...form.register("country")}
-              />
-            </FormField>
-            <FormField
+              {...form.register("country")}
+            />
+            <TextField
               id="org-currency"
               label="Currency"
               required
-              hint="Three-letter code"
+              maxLength={3}
+              className="uppercase"
+              hint="Three-letter code, for example NGN"
+              disabled={!canEdit}
               error={errors.defaultCurrency?.message}
-            >
-              <Input
-                id="org-currency"
-                maxLength={3}
-                className="uppercase"
-                disabled={!canEdit}
-                {...form.register("defaultCurrency")}
-              />
-            </FormField>
+              {...form.register("defaultCurrency")}
+            />
           </div>
-          <FormField
+          <TextField
             id="org-freshness"
             label="Freshness window (days)"
+            type="number"
+            inputMode="numeric"
+            min={7}
+            max={730}
             required
             hint="Contact fields older than this are marked stale."
+            disabled={!canEdit}
             error={errors.freshnessDays?.message}
-          >
-            <Input
-              id="org-freshness"
-              type="number"
-              inputMode="numeric"
-              min={7}
-              max={730}
-              disabled={!canEdit}
-              {...form.register("freshnessDays", { valueAsNumber: true })}
-            />
-          </FormField>
-          <p className="text-muted-foreground text-xs">
-            Organization ID <Code>{profile.data.id}</Code>
-          </p>
+            {...form.register("freshnessDays", { valueAsNumber: true })}
+          />
+          <div className="bg-surface-container-low flex min-w-0 flex-col gap-0.5 rounded-md px-4 py-3">
+            <span className="text-muted-foreground text-xs font-medium">Organization ID</span>
+            <CopyableValue value={profile.data.id} label="organization ID" />
+          </div>
           {canEdit ? (
-            <div>
+            <div className="flex justify-end">
               <Button type="submit" loading={update.isPending} disabled={!form.formState.isDirty}>
                 Save changes
               </Button>
             </div>
           ) : null}
         </form>
-      </CardContent>
-    </Card>
+      </Card>
+      <DataAndDeletionSection profile={profile.data} navigate={navigate} />
+    </div>
   );
 }

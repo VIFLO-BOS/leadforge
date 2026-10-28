@@ -37,6 +37,33 @@ export class AuditRepository {
     return this.collection.find({ organizationId }).sort({ occurredAt: -1 }).limit(limit).toArray();
   }
 
+  /**
+   * Events of one action per UTC day in [from, to), with `sumField` summed (usage rollup:
+   * synchronous exports and their rows). Range scan on `{ organizationId, occurredAt }`.
+   */
+  async perDay(
+    organizationId: string,
+    action: string,
+    from: Date,
+    to: Date,
+    sumField?: string,
+  ): Promise<Array<{ day: string; count: number; sum: number }>> {
+    if (!organizationId) throw new Error("organizationId is required");
+    const rows = await this.collection
+      .aggregate<{ _id: string; count: number; sum: number }>([
+        { $match: { organizationId, occurredAt: { $gte: from, $lt: to }, action } },
+        {
+          $group: {
+            _id: { $dateToString: { format: "%Y-%m-%d", date: "$occurredAt", timezone: "UTC" } },
+            count: { $sum: 1 },
+            sum: { $sum: sumField ? { $ifNull: [`$${sumField}`, 0] } : 0 },
+          },
+        },
+      ])
+      .toArray();
+    return rows.map((r) => ({ day: r._id, count: r.count, sum: Number(r.sum) }));
+  }
+
   async listForUser(actorUserId: string, limit = 50) {
     return this.collection.find({ actorUserId }).sort({ occurredAt: -1 }).limit(limit).toArray();
   }

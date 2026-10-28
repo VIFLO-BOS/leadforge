@@ -90,3 +90,20 @@ describe("ConfirmDialog", () => {
     expect(screen.getByRole("alertdialog", { name: "Sure?" })).toBeInTheDocument();
   });
 });
+
+describe("cn", () => {
+  it("keeps custom font-size tokens alongside colour utilities", async () => {
+    const { cn } = await import("@leadforge/ui");
+    expect(cn("text-h3", "text-muted-foreground")).toBe("text-h3 text-muted-foreground");
+    expect(cn("text-h3", "text-h4")).toBe("text-h4");
+    expect(cn("shadow-1", "shadow-3")).toBe("shadow-3");
+  });
+});
+
+describe("initials", () => {
+  it("skips words that do not start with a letter", async () => {
+    const { initials } = await import("@leadforge/ui");
+    expect(initials("Ada Okafor (Sample)")).toBe("AO");
+    expect(initials("(Sample)")).toBe("?");
+  });
+});
